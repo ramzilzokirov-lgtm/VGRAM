@@ -17,6 +17,75 @@ jobs:
           sed -i -E 's/^APP_VERSION_NAME=.*/APP_VERSION_NAME=0.1/' gradle.properties
           grep -rn 'name="AppName' TMessagesProj/src/main/res/values/ || true
           grep -n 'APP_VERSION' gradle.properties || true
+      - name: Apply VGRAM icon
+        continue-on-error: true
+        run: |
+          test -f vgram-icon.png || { echo "vgram-icon.png not found in repo root"; exit 1; }
+          pip install pillow
+          python3 - <<'PY'
+          import os, re
+          from PIL import Image
+
+          SRC = "vgram-icon.png"
+          SKIP = ("/build/", "/.git/", "/.gradle/")
+          DENS = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+
+          names, res_dirs = set(), set()
+          for root, dirs, files in os.walk("."):
+              r = root.replace("\\", "/") + "/"
+              if any(s in r for s in SKIP):
+                  continue
+              if "AndroidManifest.xml" in files:
+                  t = open(os.path.join(root, "AndroidManifest.xml"), encoding="utf-8", errors="ignore").read()
+                  found = re.findall(r'android:(?:icon|roundIcon)="@mipmap/(\w+)"', t)
+                  names |= set(re.sub(r"_round$", "", n) for n in found)
+              if r.rstrip("/").endswith("/res") and "/src/" in r:
+                  res_dirs.add(os.path.normpath(root))
+
+          print("icon names in manifests:", sorted(names))
+          if not names:
+              print("No @mipmap icons found, nothing to do")
+              raise SystemExit(0)
+
+          src = Image.open(SRC).convert("RGBA")
+
+          def save(path, px):
+              src.resize((px, px), Image.LANCZOS).save(path)
+
+          changed = 0
+          for name in sorted(names):
+              stems = (name, name + "_round")
+              targets = set()
+              for res in res_dirs:
+                  for d in os.listdir(res):
+                      if not d.startswith("mipmap-"):
+                          continue
+                      dp = os.path.join(res, d)
+                      for f in os.listdir(dp):
+                          stem, ext = os.path.splitext(f)
+                          if stem not in stems:
+                              continue
+                          targets.add(res)
+                          p = os.path.join(dp, f)
+                          if ext == ".png":
+                              with Image.open(p) as old:
+                                  px = max(old.size)
+                              save(p, px)
+                              changed += 1
+                          else:
+                              os.remove(p)  # xml / webp would shadow the new png
+                              changed += 1
+              if not targets and os.path.isdir("TMessagesProj/src/main/res"):
+                  targets.add("TMessagesProj/src/main/res")
+              for res in targets:
+                  for dens, px in DENS.items():
+                      d = os.path.join(res, "mipmap-" + dens)
+                      os.makedirs(d, exist_ok=True)
+                      for n in stems:
+                          save(os.path.join(d, n + ".png"), px)
+              print("replaced icon:", name, "in", sorted(targets))
+          print("files touched:", changed)
+          PY
       - run: chmod +x gradlew
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
