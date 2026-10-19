@@ -11,6 +11,12 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Rename app and set version
+        run: |
+          find TMessagesProj/src/main/res -name 'strings*.xml' -exec sed -i -E 's|(<string name="AppName(Beta)?"[^>]*>)[^<]*|\1VGRAM|' {} +
+          sed -i -E 's/^APP_VERSION_NAME=.*/APP_VERSION_NAME=0.1/' gradle.properties
+          grep -rn 'name="AppName' TMessagesProj/src/main/res/values/ || true
+          grep -n 'APP_VERSION' gradle.properties || true
       - run: chmod +x gradlew
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
