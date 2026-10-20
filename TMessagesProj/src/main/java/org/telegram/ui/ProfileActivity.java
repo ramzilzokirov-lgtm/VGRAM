@@ -13873,7 +13873,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     } else if (position == vgramServerRow) {
                         textCell.setTextAndIcon("VGRAM — свой сервер", R.drawable.msg2_help, false);
                     } else if (position == vgramAppearanceRow) {
-                        textCell.setTextAndIcon("Оформление и бейджи", R.drawable.msg2_settings, false);
+                        textCell.setTextAndIcon("Оформление и бейджи", R.drawable.msg2_help, false);
                     } else if (position == sendLogsRow) {
                         textCell.setText(LocaleController.getString(R.string.DebugSendLogs), true);
                     } else if (position == sendLastLogsRow) {
