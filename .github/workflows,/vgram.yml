@@ -27,7 +27,6 @@ jobs:
           grep -n 'APP_VERSION' gradle.properties || true
           grep -n 'CHECK_UPDATES' TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java || true
       - name: Apply VGRAM icon
-        continue-on-error: true
         run: |
           test -f vgram-icon.png || { echo "vgram-icon.png not found in repo root"; exit 1; }
           pip install pillow
@@ -96,8 +95,6 @@ jobs:
           print("files touched:", changed)
           PY
       - name: Add VGRAM screens (Developers, Updates)
-        id: screens
-        continue-on-error: true
         run: |
           D=TMessagesProj/src/main/java/org/telegram/ui
           cat > $D/VgramDevelopersActivity.java <<'JAVA1'
@@ -424,83 +421,49 @@ jobs:
           JAVA2
           sed -i "s/VGRAM_BUILD = 0;/VGRAM_BUILD = ${GITHUB_RUN_NUMBER};/" $D/VgramUpdateActivity.java
           python3 - <<'PY'
-          import re, sys
-
-          P = "TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java"
-          s = open(P, encoding="utf-8").read()
-
-          if "vgramDevRow" in s:
-              print("already patched")
-              sys.exit(0)
-
-          # new rows, in the order they appear after "Privacy Policy"
-          ROWS = [
-              ("vgramUpdRow", "Обновления VGRAM", "msg2_help", "VgramUpdateActivity"),
-              ("vgramDevRow", "Разработчики", "msg2_policy", "VgramDevelopersActivity"),
-          ]
-          t = s
-          ok = {}
-
-          def sub1(name, pattern, repl):
-              global t
-              t, n = re.subn(pattern, repl, t, count=1)
-              ok[name] = n
-
-          sub1("decl", r"(\n[ \t]*private int policyRow;)",
-               lambda m: m.group(1) + "".join("\n    private int %s;" % r[0] for r in ROWS))
-          sub1("reset", r"(\n([ \t]*)policyRow = -1;)",
-               lambda m: m.group(1) + "".join("\n%s%s = -1;" % (m.group(2), r[0]) for r in ROWS))
-          sub1("assign", r"(\n([ \t]*)policyRow = rowCount\+\+;)",
-               lambda m: m.group(1) + "".join("\n%s%s = rowCount++;" % (m.group(2), r[0]) for r in ROWS))
-          sub1("click", r"(\} else if \(position == policyRow\) \{)(\s*Browser\.openUrl)",
-               lambda m: "".join("} else if (position == %s) {\n                presentFragment(new %s());\n            " % (r[0], r[3]) for r in ROWS) + m.group(1) + m.group(2))
-          sub1("bind", r"(\} else if \(position == policyRow\) \{)(\s*textCell\.setTextAndIcon)",
-               lambda m: "".join('} else if (position == %s) {\n                        textCell.setTextAndIcon("%s", R.drawable.%s, %s);\n                    ' % (r[0], r[1], r[2], "true" if i < len(ROWS) - 1 else "false") for i, r in enumerate(ROWS)) + m.group(1) + m.group(2))
-          sub1("policy_divider", r"(R\.drawable\.msg2_policy, )false\)", r"\1true)")
-          sub1("pointer", r"(\n([ \t]*)put\(\+\+pointer, policyRow, sparseIntArray\);)",
-               lambda m: m.group(1) + "".join("\n%sput(++pointer, %s, sparseIntArray);" % (m.group(2), r[0]) for r in ROWS))
-
-          extra = "".join(" || position == " + r[0] for r in ROWS)
-          n1 = t.count("|| position == policyRow")
-          t = t.replace("|| position == policyRow", "|| position == policyRow" + extra)
-          t, n2 = re.subn(r"(?<!\|\| )position == policyRow \|\|",
-                          "position == policyRow" + extra + " ||", t)
-          ok["viewtype"] = n1 + n2
-
-          print("== patch checks ==", ok)
-          required = ["decl", "assign", "click", "bind", "viewtype"]
-          if all(ok[k] >= 1 for k in required):
-              open(P, "w", encoding="utf-8").write(t)
-              print("PATCH APPLIED")
-          else:
-              print("PATCH SKIPPED (anchors not found), ProfileActivity.java left untouched")
-              for i, line in enumerate(s.splitlines(), 1):
-                  if "policyRow" in line:
-                      print(i, line.strip()[:150])
-              sys.exit(1)
+          from pathlib import Path
+          p = Path("TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java")
+          s = p.read_text(encoding="utf-8")
+          row_anchor = '        items.add(SettingCell.Factory.of(19, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_policy, getString(R.string.PrivacyPolicy)));'
+          rows = '''
+          items.add(SettingCell.Factory.of(26, IconBackgroundColors.BLUE_LIGHT.top, IconBackgroundColors.BLUE_LIGHT.bottom, R.drawable.settings_faq, "Обновления VGRAM"));
+          items.add(SettingCell.Factory.of(27, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_policy, "Разработчики"));
+          '''.strip("\n")
+          if '"Обновления VGRAM"' not in s:
+              if row_anchor not in s:
+                  raise SystemExit("Could not find Privacy Policy row in SettingsActivity.java")
+              s = s.replace(row_anchor, row_anchor + "\n" + rows, 1)
+          click_anchor = '''            case 19:
+                Browser.openUrl(getParentActivity(), LocaleController.getString(R.string.PrivacyPolicyUrl));
+                break;'''
+          click_rows = '''
+            case 26:
+                presentSettingFragment(new VgramUpdateActivity());
+                break;
+            case 27:
+                presentSettingFragment(new VgramDevelopersActivity());
+                break;
+          '''.rstrip()
+          if 'case 26:' not in s:
+              if click_anchor not in s:
+                  raise SystemExit("Could not find Privacy Policy click handler in SettingsActivity.java")
+              s = s.replace(click_anchor, click_anchor + "\n\n" + click_rows, 1)
+          p.write_text(s, encoding="utf-8")
+          print("SettingsActivity patched: VGRAM menu rows and click handlers are installed")
           PY
       - run: chmod +x gradlew
-      - name: Build (with VGRAM screens)
-        id: b1
-        continue-on-error: true
+      - name: Build APK
         run: |
+          set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee build1.log
-          exit ${PIPESTATUS[0]}
-      - name: Fallback build without VGRAM screens
-        if: steps.b1.outcome == 'failure'
-        run: |
-          git checkout -- TMessagesProj/src/main/java
-          rm -f TMessagesProj/src/main/java/org/telegram/ui/Vgram*.java
-          sed -i 's/CHECK_UPDATES = true;/CHECK_UPDATES = false;/' TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
-          ./gradlew assembleDebug --stacktrace
+          test -n "$(find TMessagesProj_AppStandalone/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)" || { echo "Standalone APK was not produced"; exit 1; }
       - name: Publish GitHub Release
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          APK=$(find . -path '*TMessagesProj_AppStandalone/build/outputs/apk/*' -name '*.apk' | xargs -r ls -S | head -1)
-          if [ -z "$APK" ]; then APK=$(find . -path '*/build/outputs/apk/*' -name '*.apk' | xargs -r ls -S | head -1); fi
-          echo "Release file: $APK"
+          set -euo pipefail
+          APK=$(find TMessagesProj_AppStandalone/build/outputs/apk -type f -name '*.apk' -print | sort | head -n 1)
+          test -n "$APK" || { echo "No standalone APK found"; exit 1; }
           cp "$APK" VGRAM.apk
           gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 0.1 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 0.1 build, number ${GITHUB_RUN_NUMBER}."
       - uses: actions/upload-artifact@v4
