@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -11,6 +13,7 @@ from pydantic import BaseModel, Field
 DB_PATH = os.getenv("VGRAM_DB_PATH", "vgram.db")
 ADMIN_KEY = os.getenv("VGRAM_ADMIN_KEY", "")
 app = FastAPI(title="VGRAM Server Starter", version="0.2.0")
+_bot_process = None
 
 
 @contextmanager
@@ -56,7 +59,27 @@ def init_db():
 
 @app.on_event("startup")
 def startup():
+    global _bot_process
     init_db()
+    # FastAPI owns Render's public PORT; run the Telegram bot without a second HTTP listener.
+    token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if token and os.getenv("VGRAM_DISABLE_BOT", "").lower() not in ("1", "true", "yes"):
+        _bot_process = subprocess.Popen(
+            [sys.executable, os.path.join(os.path.dirname(__file__), "bot.py")],
+            cwd=os.path.dirname(__file__),
+            env=os.environ.copy(),
+        )
+
+@app.on_event("shutdown")
+def shutdown():
+    global _bot_process
+    if _bot_process is not None and _bot_process.poll() is None:
+        _bot_process.terminate()
+        try:
+            _bot_process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            _bot_process.kill()
+        _bot_process = None
 
 
 def auth(key):
