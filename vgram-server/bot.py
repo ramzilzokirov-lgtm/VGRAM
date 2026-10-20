@@ -47,6 +47,13 @@ def init_db():
             total TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new',
             created_at TEXT NOT NULL)""")
         c.execute("""CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS free_numbers(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'available', claimed_by INTEGER,
+            added_at TEXT NOT NULL, claimed_at TEXT)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS free_number_claims(
+            user_id INTEGER PRIMARY KEY, number_id INTEGER NOT NULL UNIQUE,
+            claimed_at TEXT NOT NULL)""")
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -57,6 +64,7 @@ def is_admin(update: Update) -> bool:
 def main_menu():
     rows = [[InlineKeyboardButton(label, callback_data=f"cat:{key}")]
             for key, label in CATEGORIES.items()]
+    rows.append([InlineKeyboardButton("🎁 Получить бесплатный +7", callback_data="free7")])
     rows.append([InlineKeyboardButton("📦 Мои заказы", callback_data="myorders")])
     return InlineKeyboardMarkup(rows)
 
@@ -68,6 +76,7 @@ def admin_menu():
          InlineKeyboardButton("➕ Добавить товар", callback_data="adm:addhelp")],
         [InlineKeyboardButton("👥 Пользователи", callback_data="adm:users"),
          InlineKeyboardButton("📣 Рассылка", callback_data="adm:broadcasthelp")],
+        [InlineKeyboardButton("🎁 Бесплатные +7 номера", callback_data="adm:free7")],
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,6 +126,22 @@ async def addproduct(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c.execute("INSERT INTO products(category,name,price,stock,created_at) VALUES(?,?,?,?,?)",
                   (parts[0], parts[1], parts[2], stock, now()))
     await update.message.reply_text("✅ Товар добавлен.")
+
+async def addnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа."); return
+    phone = " ".join(context.args).strip()
+    compact = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if not compact.startswith("+7") or not compact[1:].isdigit() or len(compact) < 11 or len(compact) > 12:
+        await update.message.reply_text("Формат: /addnumber +7XXXXXXXXXX\\nДобавь один номер для бесплатной выдачи.")
+        return
+    with db() as c:
+        try:
+            c.execute("INSERT INTO free_numbers(phone, status, added_at) VALUES(?, 'available', ?)", (phone, now()))
+        except sqlite3.IntegrityError:
+            await update.message.reply_text("Этот номер уже добавлен."); return
+        available = c.execute("SELECT COUNT(*) n FROM free_numbers WHERE status='available'").fetchone()["n"]
+    await update.message.reply_text(f"✅ Номер добавлен. Свободно номеров: {available}.")
 
 async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
@@ -188,7 +213,32 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("adm:") and uid != ADMIN_ID:
         await q.edit_message_text("⛔ Нет доступа."); return
 
-    if data.startswith("cat:"):
+    if data == "free7":
+        if uid == ADMIN_ID:
+            await q.edit_message_text("🎁 Управление бесплатными +7 номерами\\nДобавляй номера командой /addnumber +7XXXXXXXXXX", reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📊 Остаток и выдачи", callback_data="adm:free7")],
+                [InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
+            return
+        with db() as c:
+            prior = c.execute("SELECT fn.phone FROM free_number_claims fc JOIN free_numbers fn ON fn.id=fc.number_id WHERE fc.user_id=?", (uid,)).fetchone()
+            if prior:
+                await q.edit_message_text(f"🎁 Ты уже получил бесплатный номер: {prior['phone']}\\nПовторная выдача невозможна.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
+                return
+            c.execute("BEGIN IMMEDIATE")
+            available = c.execute("SELECT id, phone FROM free_numbers WHERE status='available' ORDER BY id LIMIT 1").fetchone()
+            if not available:
+                c.rollback()
+                await q.edit_message_text("😔 Бесплатные +7 номера временно закончились.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
+                return
+            claimed_at = now()
+            c.execute("UPDATE free_numbers SET status='claimed', claimed_by=?, claimed_at=? WHERE id=? AND status='available'", (uid, claimed_at, available["id"]))
+            c.execute("INSERT INTO free_number_claims(user_id, number_id, claimed_at) VALUES(?,?,?)", (uid, available["id"], claimed_at))
+        await q.edit_message_text(f"🎉 Твой бесплатный +7 номер: {available['phone']}\\n\\nВыдача доступна один раз на Telegram-аккаунт.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
+        try:
+            await context.bot.send_message(ADMIN_ID, f"🎁 Выдан бесплатный +7 номер\\nНомер: {available['phone']}\\nПользователь: {uid} (@{q.from_user.username or 'без username'})")
+        except Exception:
+            log.exception("Could not notify admin about free number")
+    elif data.startswith("cat:"):
         category = data.split(":", 1)[1]
         if category not in CATEGORIES: return
         with db() as c:
@@ -233,6 +283,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rows = c.execute("SELECT o.id,o.total,o.status,p.name FROM orders o JOIN products p ON p.id=o.product_id WHERE o.user_id=? ORDER BY o.id DESC LIMIT 10", (uid,)).fetchall()
         text = "📦 Твои заказы:\n\n" + ("\n".join(f"#{r['id']} {r['name']} — {r['total']} — {STATUSES.get(r['status'], r['status'])}" for r in rows) if rows else "Заказов пока нет.")
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
+    elif data == "adm:free7":
+        with db() as c:
+            available = c.execute("SELECT COUNT(*) n FROM free_numbers WHERE status='available'").fetchone()["n"]
+            claimed = c.execute("SELECT COUNT(*) n FROM free_numbers WHERE status='claimed'").fetchone()["n"]
+            claims = c.execute("SELECT fn.phone, fc.user_id FROM free_number_claims fc JOIN free_numbers fn ON fn.id=fc.number_id ORDER BY fc.claimed_at DESC LIMIT 15").fetchall()
+            pool = c.execute("SELECT phone FROM free_numbers WHERE status='available' ORDER BY id LIMIT 20").fetchall()
+        lines = [f"🎁 Бесплатные +7 номера\\nСвободно: {available}\\nВыдано: {claimed}", "", "Последние выдачи:"]
+        lines.extend([f"{r['phone']} → ID {r['user_id']}" for r in claims] or ["Пока выдач нет."])
+        lines += ["", "Добавить номер: /addnumber +7XXXXXXXXXX", "Свободные номера:"]
+        lines.extend([r["phone"] for r in pool] or ["Нет свободных номеров."])
+        await q.edit_message_text("\\n".join(lines), reply_markup=admin_menu())
     elif data == "adm:stats":
         with db() as c:
             users = c.execute("SELECT COUNT(*) n FROM users").fetchone()["n"]
@@ -335,6 +396,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("addproduct", addproduct))
     app.add_handler(CommandHandler("setstock", setstock))
+    app.add_handler(CommandHandler("addnumber", addnumber))
     app.add_handler(CommandHandler("setprice", setprice))
     app.add_handler(CommandHandler("ban", ban_cmd))
     app.add_handler(CommandHandler("unban", unban_cmd))
