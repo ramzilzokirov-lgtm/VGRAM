@@ -348,6 +348,24 @@ def revoke_user_badge(
             raise HTTPException(404, "Badge not found")
         return {"ok": True, "vgram_id": vgram_id, "badge_code": badge_code.strip().upper()}
 
+
+@app.post("/admin/nfts/restore-stock")
+def restore_nft_stock(x_vgram_admin_key: str | None = Header(default=None)):
+    """Restore active listings to their configured max_quantity; never invent supply."""
+    auth(x_vgram_admin_key)
+    with db() as c:
+        cur = c.execute(
+            """UPDATE nft_items
+               SET available_quantity=max_quantity, active=1, updated_at=?
+               WHERE max_quantity > 0""",
+            (now_iso(),),
+        )
+        count = cur.rowcount
+        total = c.execute(
+            "SELECT COALESCE(SUM(available_quantity),0) AS quantity FROM nft_items WHERE active=1"
+        ).fetchone()["quantity"]
+        return {"ok": True, "restored_listings": count, "available_quantity_total": total}
+
 # VGRAM native account and private chat API.
 from chat_api import router as chat_router
 app.include_router(chat_router)
