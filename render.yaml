@@ -1,0 +1,20 @@
+services:
+  - type: worker
+    name: vgram-shop-bot
+    runtime: python
+    plan: starter
+    region: frankfurt
+    rootDir: vgram-server
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        value: "8436409687"
+      - key: DB_PATH
+        value: /var/data/shop.sqlite3
+    disk:
+      name: vgram-shop-data
+      mountPath: /var/data
+      sizeGB: 1
