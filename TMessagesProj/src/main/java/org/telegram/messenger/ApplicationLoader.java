@@ -41,6 +41,7 @@ import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.ForegroundDetector;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.IUpdateLayout;
@@ -289,6 +290,15 @@ public class ApplicationLoader extends Application {
         }
 
         super.onCreate();
+
+        // Restore VGRAM's selected accent before the main interface is created.
+        try {
+            SharedPreferences vgramPrefs = getSharedPreferences("vgram_appearance", MODE_PRIVATE);
+            int accent = vgramPrefs.getInt("accent", 0xFFC5B878);
+            Theme.setColor(Theme.key_windowBackgroundWhiteBlueText, accent, false);
+            Theme.setColor(Theme.key_featuredStickers_buttonText, accent, false);
+        } catch (Throwable ignore) {
+        }
 
         // AndroidUtilities must be initialized before FileLog
         final String helloWorld = AndroidUtilities.getHelloWorld();
