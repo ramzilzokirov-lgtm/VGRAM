@@ -39,7 +39,14 @@ def init_db():
         c.execute("""CREATE TABLE IF NOT EXISTS products(
             id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL,
             name TEXT NOT NULL, price TEXT NOT NULL, stock INTEGER NOT NULL DEFAULT 0,
+            max_stock INTEGER NOT NULL DEFAULT 0,
             active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL)""")
+        try:
+            c.execute("ALTER TABLE products ADD COLUMN max_stock INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+        c.execute("UPDATE products SET max_stock=stock WHERE max_stock=0 AND stock>0")
         c.execute("""CREATE TABLE IF NOT EXISTS orders(
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
             product_id INTEGER NOT NULL, quantity INTEGER NOT NULL,
@@ -124,8 +131,8 @@ async def addproduct(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Остаток должен быть целым числом от 0.")
         return
     with db() as c:
-        c.execute("INSERT INTO products(category,name,price,stock,created_at) VALUES(?,?,?,?,?)",
-                  (parts[0], parts[1], parts[2], stock, now()))
+        c.execute("INSERT INTO products(category,name,price,stock,max_stock,created_at) VALUES(?,?,?,?,?,?)",
+                  (parts[0], parts[1], parts[2], stock, stock, now()))
     await update.message.reply_text("✅ Товар добавлен.")
 
 async def addnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,7 +162,7 @@ async def setstock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Формат: /setstock ID количество")
         return
     with db() as c:
-        cur = c.execute("UPDATE products SET stock=? WHERE id=?", (stock, product_id))
+        cur = c.execute("UPDATE products SET stock=?, max_stock=? WHERE id=?", (stock, stock, product_id))
     await update.message.reply_text("✅ Остаток обновлён." if cur.rowcount else "Товар не найден.")
 
 async def setprice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -275,21 +282,37 @@ async def restock_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not key:
         await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY; остатки не менялись.")
         return
+    with db() as c:
+        cur = c.execute("UPDATE products SET stock=max_stock, active=1 WHERE category='nfts' AND max_stock>0")
+        shop_restored = cur.rowcount
+    if not key:
+        await update.message.reply_text(
+            f"Остатки NFT в Telegram-маркете восстановлены: {shop_restored} карточек.\n"
+            "Для отдельного API-маркета нужно задать VGRAM_ADMIN_KEY; его остатки не менялись."
+        )
+        return
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(f"{api}/admin/nfts/restore-stock", headers={"X-VGRAM-Admin-Key": key})
         if response.is_success:
             data = response.json()
             await update.message.reply_text(
-                "✅ Остатки NFT восстановлены по настроенному max_quantity.\n"
-                f"Обновлено карточек: {data.get('restored_listings', 0)}\n"
-                f"Доступное количество: {data.get('available_quantity_total', 0)}"
+                "✅ Остатки NFT восстановлены по сохранённому max_quantity.\n"
+                f"Карточки Telegram-маркета: {shop_restored}\n"
+                f"Карточки API-маркета: {data.get('restored_listings', 0)}\n"
+                f"Доступно в API-маркете: {data.get('available_quantity_total', 0)}"
             )
         else:
-            await update.message.reply_text(f"Не удалось восстановить остатки: HTTP {response.status_code} — {response.text[:250]}")
+            await update.message.reply_text(
+                f"В Telegram-маркете восстановлено {shop_restored} карточек. "
+                f"API-маркет вернул HTTP {response.status_code}: {response.text[:180]}"
+            )
     except Exception as exc:
         log.exception("NFT stock restoration failed")
-        await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
+        await update.message.reply_text(
+            f"В Telegram-маркете восстановлено {shop_restored} карточек. "
+            f"API-маркет недоступен: {type(exc).__name__}"
+        )
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
