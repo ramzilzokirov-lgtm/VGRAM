@@ -304,6 +304,24 @@ def list_user_badges(vgram_id: str):
         return {"vgram_id": vgram_id, "badges": [dict(row) for row in rows]}
 
 
+@app.get("/users/telegram/{telegram_id}/badges")
+def list_telegram_user_badges(telegram_id: str):
+    """Read VGRAM badges linked by the owner to a Telegram numeric user ID."""
+    if not telegram_id.isdigit() or len(telegram_id) > 20:
+        raise HTTPException(400, "Invalid Telegram user ID")
+    account_id = f"telegram:{telegram_id}"
+    with db() as c:
+        user = c.execute("SELECT vgram_id FROM users WHERE account_id=?", (account_id,)).fetchone()
+        if not user:
+            return {"telegram_id": telegram_id, "badges": []}
+        rows = c.execute(
+            "SELECT badge_code,label,issued_at FROM user_badges WHERE vgram_id=? ORDER BY issued_at",
+            (user["vgram_id"],),
+        ).fetchall()
+        return {"telegram_id": telegram_id, "vgram_id": user["vgram_id"],
+                "badges": [dict(row) for row in rows]}
+
+
 @app.put("/admin/users/{vgram_id}/badges/{badge_code}")
 def issue_user_badge(
     vgram_id: str,
