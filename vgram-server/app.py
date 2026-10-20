@@ -250,3 +250,8 @@ def upsert_nft(
             (nft_id,),
         ).fetchone()
         return dict(row)
+
+
+# VGRAM native account and private chat API.
+from chat_api import router as chat_router
+app.include_router(chat_router)
