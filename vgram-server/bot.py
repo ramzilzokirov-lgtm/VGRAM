@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 import sqlite3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
 from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -300,10 +302,29 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "adm:menu":
         await q.edit_message_text("⚙️ Панель администратора", reply_markup=admin_menu())
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"VGRAM shop bot is running"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        return
+
+def start_health_server():
+    port = int(os.getenv("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    log.info("Health server listening on port %s", port)
+
 def main():
     if not TOKEN:
         raise RuntimeError("Set BOT_TOKEN in Render environment variables.")
     init_db()
+    start_health_server()
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
