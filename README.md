@@ -44,3 +44,8 @@ You will require Android Studio 2025.1.4, Android NDK 27.2.12479018 and Android 
 ### Localization
 
 We moved all translations to https://translations.telegram.org/en/android/. Please use it.
+
+
+## VGRAM documentation
+
+- [Plugin system and developer guide](docs/PLUGINS.md)
