@@ -15,7 +15,7 @@ import android.widget.*;
 
 public class MainActivity extends Activity {
     private final int bg = Color.rgb(16,17,19), panel = Color.rgb(29,30,33), yellow = Color.rgb(218,196,91), white = Color.rgb(245,245,242), muted = Color.rgb(165,166,169);
-    private EditText username;
+    private static final String BOT_USERNAME = "VGRAM2_bot";
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setStatusBarColor(bg); getWindow().setNavigationBarColor(bg);
@@ -34,20 +34,16 @@ public class MainActivity extends Activity {
         root.addView(paid,topMargin(params(-1,-2),dp(12)));
         LinearLayout settings=card(); settings.setOrientation(LinearLayout.VERTICAL);
         settings.addView(text("Подключение к боту",17,white,true));
-        TextView help=text("Введи @username своего Telegram-бота, чтобы открыть магазин и получать товары.",13,muted,false); root.addView(settings,topMargin(params(-1,-2),dp(12)));
+        TextView help=text("Подключён Telegram-бот: @VGRAM2_bot. Нажми кнопку ниже, чтобы открыть магазин.",13,muted,false); root.addView(settings,topMargin(params(-1,-2),dp(12)));
         settings.addView(help,topMargin(params(-1,-2),dp(8)));
-        username=new EditText(this); username.setSingleLine(true); username.setTextColor(white); username.setHintTextColor(muted); username.setHint("@имя_бота"); username.setTextSize(15); username.setPadding(dp(12),0,dp(12),0); username.setBackground(shape(panel,12));
-        settings.addView(username,topMargin(params(-1,dp(48)),dp(12)));
-        Button open=button("ОТКРЫТЬ МАГАЗИН В TELEGRAM"); settings.addView(open,topMargin(params(-1,dp(50)),dp(12)));
+        Button open=button("ОТКРЫТЬ @VGRAM2_bot В TELEGRAM"); settings.addView(open,topMargin(params(-1,dp(50)),dp(12)));
         open.setOnClickListener(v -> openBot());
         TextView note=text("Номера и оплата обрабатываются ботом. Не вводи здесь коды входа или пароли.",12,muted,false); root.addView(note,topMargin(params(-1,-2),dp(18)));
         TextView footer=text("VGRAM SHOP  •  VERSION 0.1",11,muted,true); footer.setGravity(Gravity.CENTER); root.addView(footer,topMargin(params(-1,-2),dp(28)));
         setContentView(scroll);
     }
     private void openBot() {
-        String name=username.getText().toString().trim().replace("@","");
-        if(name.isEmpty() || !name.matches("[A-Za-z0-9_]{5,32}")) { username.setError("Введи корректный @username бота"); return; }
-        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/"+name))); }
+        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/" + BOT_USERNAME))); }
         catch(Exception e) { Toast.makeText(this,"Не удалось открыть Telegram",Toast.LENGTH_LONG).show(); }
     }
     private LinearLayout card(){ LinearLayout l=new LinearLayout(this); l.setPadding(dp(16),dp(16),dp(16),dp(16)); l.setBackground(shape(panel,18)); return l; }
