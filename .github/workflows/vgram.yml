@@ -324,6 +324,15 @@ jobs:
                   notesView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
                   list.addView(notesView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 16, 0, 0));
 
+                  TextView documentationLink = new TextView(context);
+                  documentationLink.setText("Документация VGRAM: плагины и разработка  ↗");
+                  documentationLink.setTextSize(14);
+                  documentationLink.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+                  documentationLink.setPadding(0, AndroidUtilities.dp(18), 0, AndroidUtilities.dp(8));
+                  documentationLink.setOnClickListener(v -> Browser.openUrl(getParentActivity(),
+                          "https://github.com/ramzilzokirov-lgtm/VGRAM/blob/finish-vgram-features/docs/PLUGINS.md"));
+                  list.addView(documentationLink, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
                   fragmentView = scroll;
                   return fragmentView;
               }
