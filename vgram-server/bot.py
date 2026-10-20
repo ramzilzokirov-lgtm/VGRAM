@@ -279,9 +279,6 @@ async def restock_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
     key = os.getenv("VGRAM_ADMIN_KEY", "")
-    if not key:
-        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY; остатки не менялись.")
-        return
     with db() as c:
         cur = c.execute("UPDATE products SET stock=max_stock, active=1 WHERE category='nfts' AND max_stock>0")
         shop_restored = cur.rowcount
