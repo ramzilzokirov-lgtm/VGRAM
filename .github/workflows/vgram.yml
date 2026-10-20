@@ -1,0 +1,515 @@
+name: VGRAM Build
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Keep signing key between builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: vgram-debug-keystore-v1
+      - name: Rename app, set version, disable official update check
+        run: |
+          find TMessagesProj/src/main/res -name 'strings*.xml' -exec sed -i -E 's|(<string name="AppName(Beta)?"[^>]*>)[^<]*|\1VGRAM|' {} +
+          sed -i -E 's/^APP_VERSION_NAME=.*/APP_VERSION_NAME=0.1/' gradle.properties
+          sed -i 's/CHECK_UPDATES = true;/CHECK_UPDATES = false;/' TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+          grep -rn 'name="AppName' TMessagesProj/src/main/res/values/ || true
+          grep -n 'APP_VERSION' gradle.properties || true
+          grep -n 'CHECK_UPDATES' TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java || true
+      - name: Apply VGRAM icon
+        continue-on-error: true
+        run: |
+          test -f vgram-icon.png || { echo "vgram-icon.png not found in repo root"; exit 1; }
+          pip install pillow
+          python3 - <<'PY'
+          import os, re
+          from PIL import Image
+
+          SRC = "vgram-icon.png"
+          SKIP = ("/build/", "/.git/", "/.gradle/")
+          DENS = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+
+          names, res_dirs = set(), set()
+          for root, dirs, files in os.walk("."):
+              r = root.replace("\\", "/") + "/"
+              if any(s in r for s in SKIP):
+                  continue
+              if "AndroidManifest.xml" in files:
+                  t = open(os.path.join(root, "AndroidManifest.xml"), encoding="utf-8", errors="ignore").read()
+                  found = re.findall(r'android:(?:icon|roundIcon)="@mipmap/(\w+)"', t)
+                  names |= set(re.sub(r"_round$", "", n) for n in found)
+              if r.rstrip("/").endswith("/res"):
+                  res_dirs.add(os.path.normpath(root))
+
+          print("icon names in manifests:", sorted(names))
+          if not names:
+              print("No @mipmap icons found, nothing to do")
+              raise SystemExit(0)
+
+          src = Image.open(SRC).convert("RGBA")
+
+          def save(path, px):
+              src.resize((px, px), Image.LANCZOS).save(path)
+
+          changed = 0
+          for name in sorted(names):
+              stems = (name, name + "_round")
+              targets = set()
+              for res in res_dirs:
+                  for d in os.listdir(res):
+                      if not d.startswith("mipmap-"):
+                          continue
+                      dp = os.path.join(res, d)
+                      for f in os.listdir(dp):
+                          stem, ext = os.path.splitext(f)
+                          if stem not in stems:
+                              continue
+                          targets.add(res)
+                          p = os.path.join(dp, f)
+                          if ext == ".png":
+                              with Image.open(p) as old:
+                                  px = max(old.size)
+                              save(p, px)
+                              changed += 1
+                          else:
+                              os.remove(p)  # xml / webp would shadow the new png
+                              changed += 1
+              if not targets and os.path.isdir("TMessagesProj/src/main/res"):
+                  targets.add("TMessagesProj/src/main/res")
+              for res in targets:
+                  for dens, px in DENS.items():
+                      d = os.path.join(res, "mipmap-" + dens)
+                      os.makedirs(d, exist_ok=True)
+                      for n in stems:
+                          save(os.path.join(d, n + ".png"), px)
+              print("replaced icon:", name, "in", sorted(targets))
+          print("files touched:", changed)
+          PY
+      - name: Add VGRAM screens (Developers, Updates)
+        id: screens
+        continue-on-error: true
+        run: |
+          D=TMessagesProj/src/main/java/org/telegram/ui
+          cat > $D/VgramDevelopersActivity.java <<'JAVA1'
+          package org.telegram.ui;
+
+          import android.content.Context;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.R;
+          import org.telegram.messenger.browser.Browser;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Components.LayoutHelper;
+
+          /**
+           * VGRAM: screen "Разработчики".
+           * Only real information is shown: no invented names or links.
+           */
+          public class VgramDevelopersActivity extends BaseFragment {
+
+              private static final String OWNER_NAME = "ramzilzokirov-lgtm";
+              private static final String OWNER_URL = "https://github.com/ramzilzokirov-lgtm";
+
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setTitle("Разработчики");
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+
+                  ScrollView scroll = new ScrollView(context);
+                  scroll.setFillViewport(true);
+                  scroll.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+
+                  LinearLayout list = new LinearLayout(context);
+                  list.setOrientation(LinearLayout.VERTICAL);
+                  list.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(24));
+                  scroll.addView(list, LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+
+                  list.addView(createCard(context, "R", OWNER_NAME, "Автор и владелец проекта VGRAM", OWNER_URL),
+                          LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
+                  list.addView(createCard(context, "AI", "ChatGPT", "ИИ-помощник: идеи и техническое задание", null),
+                          LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
+
+                  TextView footer = new TextView(context);
+                  footer.setText("VGRAM 0.1");
+                  footer.setTextSize(13);
+                  footer.setGravity(Gravity.CENTER);
+                  footer.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+                  list.addView(footer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 12, 0, 0));
+
+                  fragmentView = scroll;
+                  return fragmentView;
+              }
+
+              private View createCard(Context context, String letters, String name, String role, final String url) {
+                  LinearLayout card = new LinearLayout(context);
+                  card.setOrientation(LinearLayout.HORIZONTAL);
+                  card.setGravity(Gravity.CENTER_VERTICAL);
+                  card.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16));
+
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setCornerRadius(AndroidUtilities.dp(20));
+                  bg.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                  bg.setStroke(AndroidUtilities.dp(1), Theme.getColor(Theme.key_divider));
+                  card.setBackground(bg);
+
+                  // Avatar: circle with initials (no external images needed)
+                  TextView avatar = new TextView(context);
+                  avatar.setText(letters);
+                  avatar.setTextSize(18);
+                  avatar.setTypeface(Typeface.DEFAULT_BOLD);
+                  avatar.setGravity(Gravity.CENTER);
+                  avatar.setTextColor(0xFF24231F);
+                  GradientDrawable circle = new GradientDrawable();
+                  circle.setShape(GradientDrawable.OVAL);
+                  circle.setColor(0xFFC5B878);
+                  avatar.setBackground(circle);
+                  card.addView(avatar, LayoutHelper.createLinear(52, 52, 0, 0, 14, 0));
+
+                  LinearLayout texts = new LinearLayout(context);
+                  texts.setOrientation(LinearLayout.VERTICAL);
+
+                  TextView nameView = new TextView(context);
+                  nameView.setText(name);
+                  nameView.setTextSize(17);
+                  nameView.setTypeface(Typeface.DEFAULT_BOLD);
+                  nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                  texts.addView(nameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+                  TextView roleView = new TextView(context);
+                  roleView.setText(role);
+                  roleView.setTextSize(14);
+                  roleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+                  texts.addView(roleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+
+                  if (url != null) {
+                      TextView link = new TextView(context);
+                      link.setText("Открыть профиль на GitHub");
+                      link.setTextSize(14);
+                      link.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+                      texts.addView(link, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+                      card.setOnClickListener(v -> Browser.openUrl(getParentActivity(), url));
+                  }
+
+                  card.addView(texts, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+                  return card;
+              }
+          }
+          JAVA1
+          cat > $D/VgramUpdateActivity.java <<'JAVA2'
+          package org.telegram.ui;
+
+          import android.content.Context;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+
+          import org.json.JSONArray;
+          import org.json.JSONObject;
+          import org.telegram.messenger.AndroidUtilities;
+          import org.telegram.messenger.BuildVars;
+          import org.telegram.messenger.R;
+          import org.telegram.messenger.browser.Browser;
+          import org.telegram.ui.ActionBar.ActionBar;
+          import org.telegram.ui.ActionBar.BaseFragment;
+          import org.telegram.ui.ActionBar.Theme;
+          import org.telegram.ui.Components.LayoutHelper;
+
+          import java.io.BufferedReader;
+          import java.io.InputStreamReader;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+
+          /**
+           * VGRAM: screen "Обновления".
+           * Checks GitHub Releases of the project and, if a newer build exists,
+           * opens the APK download. Installation goes through the normal Android
+           * installer, so the user always confirms it.
+           */
+          public class VgramUpdateActivity extends BaseFragment {
+
+              // The build workflow replaces 0 with the real build number.
+              private static final int VGRAM_BUILD = 0;
+              private static final String API_URL = "https://api.github.com/repos/ramzilzokirov-lgtm/VGRAM/releases/latest";
+
+              private TextView statusView;
+              private TextView notesView;
+              private TextView downloadButton;
+              private String downloadUrl;
+              private boolean checking;
+              private boolean destroyed;
+
+              @Override
+              public View createView(Context context) {
+                  actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+                  actionBar.setTitle("Обновления");
+                  actionBar.setAllowOverlayTitle(true);
+                  actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                      @Override
+                      public void onItemClick(int id) {
+                          if (id == -1) {
+                              finishFragment();
+                          }
+                      }
+                  });
+
+                  ScrollView scroll = new ScrollView(context);
+                  scroll.setFillViewport(true);
+                  scroll.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+
+                  LinearLayout list = new LinearLayout(context);
+                  list.setOrientation(LinearLayout.VERTICAL);
+                  list.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(24));
+                  scroll.addView(list, LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
+
+                  TextView current = new TextView(context);
+                  current.setText("Текущая версия: VGRAM " + BuildVars.BUILD_VERSION_STRING + ", сборка " + VGRAM_BUILD);
+                  current.setTextSize(16);
+                  current.setTypeface(Typeface.DEFAULT_BOLD);
+                  current.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                  list.addView(current, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+                  statusView = new TextView(context);
+                  statusView.setText("Нажмите «Проверить», чтобы узнать о новой версии.");
+                  statusView.setTextSize(15);
+                  statusView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+                  list.addView(statusView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
+
+                  TextView checkButton = createButton(context, "Проверить обновления");
+                  checkButton.setOnClickListener(v -> checkForUpdate());
+                  list.addView(checkButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 16, 0, 0));
+
+                  downloadButton = createButton(context, "Скачать обновление");
+                  downloadButton.setVisibility(View.GONE);
+                  downloadButton.setOnClickListener(v -> {
+                      if (downloadUrl != null) {
+                          Browser.openUrl(getParentActivity(), downloadUrl);
+                      }
+                  });
+                  list.addView(downloadButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 10, 0, 0));
+
+                  notesView = new TextView(context);
+                  notesView.setTextSize(14);
+                  notesView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                  list.addView(notesView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 16, 0, 0));
+
+                  fragmentView = scroll;
+                  return fragmentView;
+              }
+
+              private TextView createButton(Context context, String text) {
+                  TextView button = new TextView(context);
+                  button.setText(text);
+                  button.setTextSize(16);
+                  button.setTypeface(Typeface.DEFAULT_BOLD);
+                  button.setGravity(Gravity.CENTER);
+                  button.setTextColor(0xFF24231F);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setCornerRadius(AndroidUtilities.dp(16));
+                  bg.setColor(0xFFC5B878);
+                  button.setBackground(bg);
+                  return button;
+              }
+
+              private void checkForUpdate() {
+                  if (checking) {
+                      return;
+                  }
+                  checking = true;
+                  statusView.setText("Проверяю…");
+                  notesView.setText("");
+                  downloadButton.setVisibility(View.GONE);
+
+                  new Thread(() -> {
+                      final String[] result = new String[]{"", "", ""};
+                      try {
+                          HttpURLConnection connection = (HttpURLConnection) new URL(API_URL).openConnection();
+                          connection.setConnectTimeout(10000);
+                          connection.setReadTimeout(10000);
+                          connection.setRequestProperty("Accept", "application/vnd.github+json");
+                          connection.setRequestProperty("User-Agent", "VGRAM");
+                          int code = connection.getResponseCode();
+                          if (code != 200) {
+                              result[0] = "Не удалось проверить: сервер ответил кодом " + code;
+                          } else {
+                              BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), "UTF-8"));
+                              StringBuilder sb = new StringBuilder();
+                              String line;
+                              while ((line = reader.readLine()) != null) {
+                                  sb.append(line).append('\n');
+                              }
+                              reader.close();
+                              JSONObject json = new JSONObject(sb.toString());
+                              int latest = parseBuild(json.optString("tag_name", ""));
+                              String url = null;
+                              JSONArray assets = json.optJSONArray("assets");
+                              if (assets != null) {
+                                  for (int i = 0; i < assets.length(); i++) {
+                                      JSONObject asset = assets.getJSONObject(i);
+                                      if (asset.optString("name", "").endsWith(".apk")) {
+                                          url = asset.optString("browser_download_url", null);
+                                          break;
+                                      }
+                                  }
+                              }
+                              if (latest > VGRAM_BUILD && url != null) {
+                                  result[0] = "Доступна новая сборка " + latest + " (у вас " + VGRAM_BUILD + ").";
+                                  result[1] = json.optString("body", "");
+                                  result[2] = url;
+                              } else {
+                                  result[0] = "У вас последняя версия (сборка " + VGRAM_BUILD + ").";
+                              }
+                          }
+                      } catch (Exception e) {
+                          result[0] = "Ошибка проверки: " + e.getMessage();
+                      }
+                      AndroidUtilities.runOnUIThread(() -> {
+                          checking = false;
+                          if (destroyed) {
+                              return;
+                          }
+                          statusView.setText(result[0]);
+                          notesView.setText(result[1]);
+                          downloadUrl = result[2].isEmpty() ? null : result[2];
+                          downloadButton.setVisibility(downloadUrl != null ? View.VISIBLE : View.GONE);
+                      });
+                  }).start();
+              }
+
+              private static int parseBuild(String tag) {
+                  try {
+                      return Integer.parseInt(tag.replaceAll("[^0-9]", ""));
+                  } catch (Exception e) {
+                      return 0;
+                  }
+              }
+
+              @Override
+              public void onFragmentDestroy() {
+                  super.onFragmentDestroy();
+                  destroyed = true;
+              }
+          }
+          JAVA2
+          sed -i "s/VGRAM_BUILD = 0;/VGRAM_BUILD = ${GITHUB_RUN_NUMBER};/" $D/VgramUpdateActivity.java
+          python3 - <<'PY'
+          import re, sys
+
+          P = "TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java"
+          s = open(P, encoding="utf-8").read()
+
+          if "vgramDevRow" in s:
+              print("already patched")
+              sys.exit(0)
+
+          # new rows, in the order they appear after "Privacy Policy"
+          ROWS = [
+              ("vgramUpdRow", "Обновления VGRAM", "msg2_help", "VgramUpdateActivity"),
+              ("vgramDevRow", "Разработчики", "msg2_policy", "VgramDevelopersActivity"),
+          ]
+          t = s
+          ok = {}
+
+          def sub1(name, pattern, repl):
+              global t
+              t, n = re.subn(pattern, repl, t, count=1)
+              ok[name] = n
+
+          sub1("decl", r"(\n[ \t]*private int policyRow;)",
+               lambda m: m.group(1) + "".join("\n    private int %s;" % r[0] for r in ROWS))
+          sub1("reset", r"(\n([ \t]*)policyRow = -1;)",
+               lambda m: m.group(1) + "".join("\n%s%s = -1;" % (m.group(2), r[0]) for r in ROWS))
+          sub1("assign", r"(\n([ \t]*)policyRow = rowCount\+\+;)",
+               lambda m: m.group(1) + "".join("\n%s%s = rowCount++;" % (m.group(2), r[0]) for r in ROWS))
+          sub1("click", r"(\} else if \(position == policyRow\) \{)(\s*Browser\.openUrl)",
+               lambda m: "".join("} else if (position == %s) {\n                presentFragment(new %s());\n            " % (r[0], r[3]) for r in ROWS) + m.group(1) + m.group(2))
+          sub1("bind", r"(\} else if \(position == policyRow\) \{)(\s*textCell\.setTextAndIcon)",
+               lambda m: "".join('} else if (position == %s) {\n                        textCell.setTextAndIcon("%s", R.drawable.%s, %s);\n                    ' % (r[0], r[1], r[2], "true" if i < len(ROWS) - 1 else "false") for i, r in enumerate(ROWS)) + m.group(1) + m.group(2))
+          sub1("policy_divider", r"(R\.drawable\.msg2_policy, )false\)", r"\1true)")
+          sub1("pointer", r"(\n([ \t]*)put\(\+\+pointer, policyRow, sparseIntArray\);)",
+               lambda m: m.group(1) + "".join("\n%sput(++pointer, %s, sparseIntArray);" % (m.group(2), r[0]) for r in ROWS))
+
+          extra = "".join(" || position == " + r[0] for r in ROWS)
+          n1 = t.count("|| position == policyRow")
+          t = t.replace("|| position == policyRow", "|| position == policyRow" + extra)
+          t, n2 = re.subn(r"(?<!\|\| )position == policyRow \|\|",
+                          "position == policyRow" + extra + " ||", t)
+          ok["viewtype"] = n1 + n2
+
+          print("== patch checks ==", ok)
+          required = ["decl", "assign", "click", "bind", "viewtype"]
+          if all(ok[k] >= 1 for k in required):
+              open(P, "w", encoding="utf-8").write(t)
+              print("PATCH APPLIED")
+          else:
+              print("PATCH SKIPPED (anchors not found), ProfileActivity.java left untouched")
+              for i, line in enumerate(s.splitlines(), 1):
+                  if "policyRow" in line:
+                      print(i, line.strip()[:150])
+              sys.exit(1)
+          PY
+      - run: chmod +x gradlew
+      - name: Build (with VGRAM screens)
+        id: b1
+        continue-on-error: true
+        run: |
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build1.log
+          exit ${PIPESTATUS[0]}
+      - name: Fallback build without VGRAM screens
+        if: steps.b1.outcome == 'failure'
+        run: |
+          git checkout -- TMessagesProj/src/main/java
+          rm -f TMessagesProj/src/main/java/org/telegram/ui/Vgram*.java
+          sed -i 's/CHECK_UPDATES = true;/CHECK_UPDATES = false;/' TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
+          ./gradlew assembleDebug --stacktrace
+      - name: Publish GitHub Release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find . -path '*TMessagesProj_AppStandalone/build/outputs/apk/*' -name '*.apk' | xargs -r ls -S | head -1)
+          if [ -z "$APK" ]; then APK=$(find . -path '*/build/outputs/apk/*' -name '*.apk' | xargs -r ls -S | head -1); fi
+          echo "Release file: $APK"
+          cp "$APK" VGRAM.apk
+          gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 0.1 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 0.1 build, number ${GITHUB_RUN_NUMBER}."
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: "**/build/outputs/apk/**/*.apk"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build1.log
+          if-no-files-found: ignore
