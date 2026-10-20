@@ -74,3 +74,8 @@ if (VgramPluginManager.isEnabled(context, "example_plugin")) {
 - `VgramPluginsActivity.java` — экран управления.
 - `VgramAppearanceActivity.java` — переход к экрану плагинов.
 - `ProfileActivity.java` — проверка флага для бейджей профиля.
+
+
+## Проверка сборки
+
+Перед выпуском изменения проверяются через GitHub Actions. APK считается готовым только после успешной сборки и появления артефакта `apk` в запуске workflow.
