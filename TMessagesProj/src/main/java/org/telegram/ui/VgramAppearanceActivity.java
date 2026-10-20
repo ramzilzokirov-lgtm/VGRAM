@@ -39,6 +39,7 @@ public class VgramAppearanceActivity extends BaseFragment {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         accent = prefs.getInt(KEY_ACCENT, COLORS[0]);
         glass = prefs.getBoolean(KEY_GLASS, true);
+        applyAccent(accent);
 
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setTitle("Оформление VGRAM");
@@ -120,6 +121,11 @@ public class VgramAppearanceActivity extends BaseFragment {
         return fragmentView;
     }
 
+    private void applyAccent(int color) {
+        Theme.setColor(Theme.key_windowBackgroundWhiteBlueText, color, false);
+        Theme.setColor(Theme.key_featuredStickers_buttonText, color, false);
+    }
+
     private void buildPalette(Context context) {
         palette.removeAllViews();
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -141,6 +147,7 @@ public class VgramAppearanceActivity extends BaseFragment {
             swatch.setOnClickListener(v -> {
                 accent = color;
                 prefs.edit().putInt(KEY_ACCENT, accent).apply();
+                applyAccent(accent);
                 buildPalette(context);
                 View card = ((View) previewTitle.getParent());
                 card.setBackground(cardBackground(accent, glass));
