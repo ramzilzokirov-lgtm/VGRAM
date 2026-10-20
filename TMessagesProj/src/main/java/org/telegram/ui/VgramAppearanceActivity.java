@@ -113,7 +113,7 @@ public class VgramAppearanceActivity extends BaseFragment {
         root.addView(badges, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         badges.addView(text(context, "Бейджи VGRAM", 17, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true),
             LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        badges.addView(text(context, "TESTER   ·   OG   ·   FRIENDS   ·   TEAM\nВыдача бейджей должна быть доступна только владельцу проекта.", 14,
+        badges.addView(text(context, "Бейджи, назначенные владельцем, отображаются рядом с именем в профиле. Управление доступно только владельцу через бота.", 14,
             Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
             LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
 
