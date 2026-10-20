@@ -74,6 +74,8 @@ import android.text.TextUtils;
 import android.text.style.CharacterStyle;
 import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.StyleSpan;
 import android.text.style.URLSpan;
 import android.text.util.Linkify;
 import android.util.Property;
@@ -129,6 +131,8 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
@@ -324,6 +328,10 @@ import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
@@ -548,6 +556,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     public ProfileBirthdayEffect.BirthdayEffectFetcher birthdayFetcher;
 
     private CharSequence currentBio;
+    private final HashMap<Long, ArrayList<String>> vgramBadgeCache = new HashMap<>();
+    private final HashSet<Long> vgramBadgeRequests = new HashSet<>();
 
     private long selectedUser;
     private int onlineCount = -1;
@@ -11265,6 +11275,89 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
     private MessagesController.PeerColor peerColor;
 
+    private void loadVgramBadges(long telegramId) {
+        ArrayList<String> cached = vgramBadgeCache.get(telegramId);
+        if (cached != null) {
+            applyVgramBadges(telegramId, cached);
+            return;
+        }
+        if (!vgramBadgeRequests.add(telegramId)) {
+            return;
+        }
+        new Thread(() -> {
+            ArrayList<String> badges = new ArrayList<>();
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL("https://vgram-31xt.onrender.com/users/telegram/" + telegramId + "/badges").openConnection();
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "VGRAM-Android");
+                if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), "UTF-8"));
+                    StringBuilder jsonText = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        jsonText.append(line);
+                    }
+                    reader.close();
+                    JSONArray items = new JSONObject(jsonText.toString()).optJSONArray("badges");
+                    if (items != null) {
+                        for (int i = 0; i < items.length(); i++) {
+                            JSONObject item = items.optJSONObject(i);
+                            if (item == null) {
+                                continue;
+                            }
+                            String label = item.optString("label", item.optString("badge_code", "")).trim();
+                            if (!label.isEmpty() && label.length() <= 40 && !badges.contains(label)) {
+                                badges.add(label);
+                            }
+                            if (badges.size() >= 4) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+            final ArrayList<String> loaded = badges;
+            AndroidUtilities.runOnUIThread(() -> {
+                vgramBadgeRequests.remove(telegramId);
+                vgramBadgeCache.put(telegramId, loaded);
+                if (userId == telegramId && nameTextView != null) {
+                    updateProfileData(false);
+                }
+            });
+        }).start();
+    }
+
+    private void applyVgramBadges(long telegramId, ArrayList<String> badges) {
+        if (userId != telegramId || badges == null || badges.isEmpty() || nameTextView == null) {
+            return;
+        }
+        for (int i = 0; i < nameTextView.length; i++) {
+            SimpleTextView titleView = nameTextView[i];
+            if (titleView == null || titleView.getText() == null) {
+                continue;
+            }
+            SpannableStringBuilder title = new SpannableStringBuilder(titleView.getText());
+            for (String label : badges) {
+                title.append("  ");
+                int start = title.length();
+                title.append(label);
+                int end = title.length();
+                title.setSpan(new BackgroundColorSpan(0x28C5B878), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                title.setSpan(new ForegroundColorSpan(0xFFC5B878), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                title.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            titleView.setText(title);
+        }
+    }
+
     private void updateProfileData(boolean reload) {
         if (avatarContainer == null || nameTextView == null || getParentActivity() == null) {
             return;
@@ -11585,6 +11678,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     });
                 }
             }
+
+            loadVgramBadges(user.id);
 
             if (userId == UserConfig.getInstance(currentAccount).clientUserId) {
                 onlineTextView[2].setText(LocaleController.getString(R.string.FallbackTooltip));
