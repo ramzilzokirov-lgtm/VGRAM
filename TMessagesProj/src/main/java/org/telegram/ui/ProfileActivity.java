@@ -11276,6 +11276,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private MessagesController.PeerColor peerColor;
 
     private void loadVgramBadges(long telegramId) {
+        if (getParentActivity() != null && !VgramPluginManager.isEnabled(getParentActivity(), "profile_badges")) {
+            return;
+        }
         ArrayList<String> cached = vgramBadgeCache.get(telegramId);
         if (cached != null) {
             applyVgramBadges(telegramId, cached);
@@ -11336,6 +11339,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void applyVgramBadges(long telegramId, ArrayList<String> badges) {
+        if (getParentActivity() != null && !VgramPluginManager.isEnabled(getParentActivity(), "profile_badges")) {
+            return;
+        }
         if (userId != telegramId || badges == null || badges.isEmpty() || nameTextView == null) {
             return;
         }
