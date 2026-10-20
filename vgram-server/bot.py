@@ -5,6 +5,8 @@ import sqlite3
 from datetime import datetime, timezone
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import httpx
+
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, ContextTypes,
     MessageHandler, filters,
@@ -74,6 +76,8 @@ def admin_menu():
         [InlineKeyboardButton("👥 Пользователи", callback_data="adm:users"),
          InlineKeyboardButton("📣 Рассылка", callback_data="adm:broadcasthelp")],
         [InlineKeyboardButton("🎁 Бесплатные +7 номера", callback_data="adm:free7")],
+        [InlineKeyboardButton("🏷 Бейджи VGRAM", callback_data="adm:badgeshelp")],
+        [InlineKeyboardButton("🖼 Восстановить остатки NFT", callback_data="adm:nftstockhelp")],
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -201,6 +205,91 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✅ Отправить", callback_data="adm:broadcastconfirm"),
             InlineKeyboardButton("Отмена", callback_data="adm:broadcastcancel")]]))
+
+
+async def badge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    raw = " ".join(context.args).split("|", 1)
+    left = raw[0].split() if raw else []
+    if len(left) != 2 or len(raw) != 2 or not raw[1].strip():
+        await update.message.reply_text("Формат: /badge VGRAM_ID CODE | подпись\nКоды: TESTER, OG, FRIENDS, TEAM, DEVELOPER, FOUNDER")
+        return
+    vgram_id, code = left[0], left[1].upper()
+    api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
+    key = os.getenv("VGRAM_ADMIN_KEY", "")
+    if not key:
+        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY; бейдж не выдан.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.put(
+                f"{api}/admin/users/{vgram_id}/badges/{code}",
+                headers={"X-VGRAM-Admin-Key": key},
+                json={"label": raw[1].strip()},
+            )
+        if response.is_success:
+            await update.message.reply_text(f"✅ Бейдж {code} назначен аккаунту {vgram_id}.")
+        else:
+            await update.message.reply_text(f"Не удалось выдать бейдж: HTTP {response.status_code} — {response.text[:250]}")
+    except Exception as exc:
+        log.exception("Badge issuance failed")
+        await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
+
+
+async def unbadge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    if len(context.args) != 2:
+        await update.message.reply_text("Формат: /unbadge VGRAM_ID CODE")
+        return
+    vgram_id, code = context.args[0], context.args[1].upper()
+    api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
+    key = os.getenv("VGRAM_ADMIN_KEY", "")
+    if not key:
+        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.delete(
+                f"{api}/admin/users/{vgram_id}/badges/{code}",
+                headers={"X-VGRAM-Admin-Key": key},
+            )
+        if response.is_success:
+            await update.message.reply_text(f"✅ Бейдж {code} снят с аккаунта {vgram_id}.")
+        else:
+            await update.message.reply_text(f"Не удалось снять бейдж: HTTP {response.status_code} — {response.text[:250]}")
+    except Exception as exc:
+        log.exception("Badge revocation failed")
+        await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
+
+
+async def restock_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
+    key = os.getenv("VGRAM_ADMIN_KEY", "")
+    if not key:
+        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY; остатки не менялись.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(f"{api}/admin/nfts/restore-stock", headers={"X-VGRAM-Admin-Key": key})
+        if response.is_success:
+            data = response.json()
+            await update.message.reply_text(
+                "✅ Остатки NFT восстановлены по настроенному max_quantity.\n"
+                f"Обновлено карточек: {data.get('restored_listings', 0)}\n"
+                f"Доступное количество: {data.get('available_quantity_total', 0)}"
+            )
+        else:
+            await update.message.reply_text(f"Не удалось восстановить остатки: HTTP {response.status_code} — {response.text[:250]}")
+    except Exception as exc:
+        log.exception("NFT stock restoration failed")
+        await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -358,6 +447,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(0.04)
             except Exception: pass
         await q.edit_message_text(f"Рассылка завершена: {sent} из {len(ids)}.", reply_markup=admin_menu())
+    elif data == "adm:badgeshelp":
+        await q.edit_message_text("🏷 Управление бейджами VGRAM\n/badge VGRAM_ID CODE | подпись\n/unbadge VGRAM_ID CODE\nКоды: TESTER, OG, FRIENDS, TEAM, DEVELOPER, FOUNDER", reply_markup=admin_menu())
+    elif data == "adm:nftstockhelp":
+        await q.edit_message_text("🖼 Восстановить доступное количество NFT до сохранённого max_quantity. Это не создаёт выдуманные позиции. Команда: /restocknfts", reply_markup=admin_menu())
     elif data == "adm:menu":
         await q.edit_message_text("⚙️ Панель администратора", reply_markup=admin_menu())
 
@@ -380,6 +473,9 @@ def main():
     app.add_handler(CommandHandler("ban", ban_cmd))
     app.add_handler(CommandHandler("unban", unban_cmd))
     app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CommandHandler("badge", badge_cmd))
+    app.add_handler(CommandHandler("unbadge", unbadge_cmd))
+    app.add_handler(CommandHandler("restocknfts", restock_nfts))
     app.add_handler(CallbackQueryHandler(button))
     log.info("VGRAM shop bot starting")
     app.run_polling(drop_pending_updates=False)
