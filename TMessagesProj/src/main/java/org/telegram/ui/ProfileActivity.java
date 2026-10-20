@@ -641,6 +641,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int faqRow;
     private int policyRow;
     private int vgramServerRow;
+    private int vgramAppearanceRow;
     private int helpSectionCell;
     private int debugHeaderRow;
     private int sendLogsRow;
@@ -4559,6 +4560,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 Browser.openUrl(getParentActivity(), LocaleController.getString(R.string.PrivacyPolicyUrl));
             } else if (position == vgramServerRow) {
                 getParentActivity().startActivity(new Intent(getParentActivity(), VgramServerActivity.class));
+            } else if (position == vgramAppearanceRow) {
+                presentFragment(new VgramAppearanceActivity());
             } else if (position == sendLogsRow) {
                 sendLogs(getParentActivity(), false);
             } else if (position == sendLastLogsRow) {
@@ -10495,6 +10498,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         faqRow = -1;
         policyRow = -1;
         vgramServerRow = -1;
+        vgramAppearanceRow = -1;
         helpSectionCell = -1;
         debugHeaderRow = -1;
         sendLogsRow = -1;
@@ -10682,6 +10686,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 faqRow = rowCount++;
                 policyRow = rowCount++;
                 vgramServerRow = rowCount++;
+                vgramAppearanceRow = rowCount++;
                 if (BuildVars.LOGS_ENABLED || BuildVars.DEBUG_PRIVATE_VERSION) {
                     helpSectionCell = rowCount++;
                     debugHeaderRow = rowCount++;
@@ -13867,6 +13872,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         textCell.setTextAndIcon(LocaleController.getString(R.string.PrivacyPolicy), R.drawable.msg2_policy, true);
                     } else if (position == vgramServerRow) {
                         textCell.setTextAndIcon("VGRAM — свой сервер", R.drawable.msg2_help, false);
+                    } else if (position == vgramAppearanceRow) {
+                        textCell.setTextAndIcon("Оформление и бейджи", R.drawable.msg2_settings, false);
                     } else if (position == sendLogsRow) {
                         textCell.setText(LocaleController.getString(R.string.DebugSendLogs), true);
                     } else if (position == sendLastLogsRow) {
