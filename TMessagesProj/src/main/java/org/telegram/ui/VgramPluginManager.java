@@ -38,8 +38,11 @@ public final class VgramPluginManager {
         }
         for (VgramPlugin plugin : PLUGINS) {
             if (plugin.getId().equals(pluginId)) {
-                return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                        .getBoolean(pluginId, plugin.isEnabledByDefault());
+                SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                if ("liquid_glass".equals(pluginId) && !prefs.contains(pluginId)) {
+                    return LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS);
+                }
+                return prefs.getBoolean(pluginId, plugin.isEnabledByDefault());
             }
         }
         return false;
