@@ -1,0 +1,45 @@
+name: Recon
+on: workflow_dispatch
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect code facts
+        run: |
+          O=recon.txt
+          UI=TMessagesProj/src/main/java/org/telegram/ui
+          MS=TMessagesProj/src/main/java/org/telegram/messenger
+          echo "### repo root" > $O
+          ls >> $O
+          echo "### gradle.properties" >> $O
+          cat gradle.properties | cut -c1-200 >> $O
+          echo "### module build.gradle (ids, versions)" >> $O
+          grep -n -E "applicationId|versionName|versionCode|buildConfigField|productFlavors|assemble" TMessagesProj*/build.gradle | cut -c1-220 >> $O
+          echo "### manifest icons" >> $O
+          grep -rn -E "android:(icon|roundIcon)=" --include=AndroidManifest.xml . | cut -c1-220 | head -40 >> $O
+          echo "### ProfileActivity: settings rows" >> $O
+          grep -n -E "policyRow|faqRow|questionRow|languageRow|helpHeaderRow|helpSectionCell" $UI/ProfileActivity.java | cut -c1-200 | head -120 >> $O
+          echo "### ProfileActivity: adapter and click handlers" >> $O
+          grep -n -E "getItemViewType|public boolean isEnabled|class ListAdapter|onBindViewHolder|setOnItemClickListener|onItemClick" $UI/ProfileActivity.java | cut -c1-200 | head -60 >> $O
+          echo "### ProfileActivity: code around policyRow click and bind" >> $O
+          grep -n -B3 -A8 "position == policyRow" $UI/ProfileActivity.java | cut -c1-200 | head -150 >> $O
+          echo "### Theme: accents" >> $O
+          grep -n -E "class ThemeAccent|class ThemeInfo|accentColor|public static void applyTheme|setAccentColor|createNewTheme|currentColors" $UI/ActionBar/Theme.java | cut -c1-200 | head -80 >> $O
+          echo "### dark/light switching" >> $O
+          grep -rn -E "isCurrentThemeDark|selectedAutoNightType|checkAutoNightThemeConditions" --include=*.java TMessagesProj/src/main/java | cut -c1-200 | head -30 >> $O
+          echo "### app update check" >> $O
+          grep -rn -E "CHECK_UPDATES|UpdateAppAlertDialog|checkAppUpdate|appUpdate" --include=*.java TMessagesProj/src/main/java | cut -c1-200 | head -50 >> $O
+          echo "### profile background / gallery" >> $O
+          grep -n -E "ProfileGalleryView|backgroundEmoji|profileColor|avatarContainer2|AvatarImageView" $UI/ProfileActivity.java | cut -c1-200 | head -60 >> $O
+          echo "### BuildVars lines" >> $O
+          grep -n -E "BUILD_VERSION|APP_ID|APP_HASH|CHECK_UPDATES" $MS/BuildVars.java | cut -c1-200 >> $O
+          echo "### Settings: where Language and Notifications rows open" >> $O
+          grep -rn -E "new LanguageSelectActivity|new NotificationsSettingsActivity|new ThemeActivity" --include=*.java $UI | cut -c1-200 | head -20 >> $O
+          echo "### fonts of file sizes" >> $O
+          wc -l $UI/ProfileActivity.java $UI/ActionBar/Theme.java $UI/LaunchActivity.java >> $O
+          wc -c $O
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recon
+          path: recon.txt
