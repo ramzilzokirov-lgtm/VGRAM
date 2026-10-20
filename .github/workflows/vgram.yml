@@ -433,9 +433,7 @@ jobs:
               if row_anchor not in s:
                   raise SystemExit("Could not find Privacy Policy row in SettingsActivity.java")
               s = s.replace(row_anchor, row_anchor + "\n" + rows, 1)
-          click_anchor = '''            case 19:
-                Browser.openUrl(getParentActivity(), LocaleController.getString(R.string.PrivacyPolicyUrl));
-                break;'''
+          import re
           click_rows = '''
             case 26:
                 presentSettingFragment(new VgramUpdateActivity());
@@ -445,24 +443,28 @@ jobs:
                 break;
           '''.rstrip()
           if 'case 26:' not in s:
-              if click_anchor not in s:
-                  raise SystemExit("Could not find Privacy Policy click handler in SettingsActivity.java")
-              s = s.replace(click_anchor, click_anchor + "\n\n" + click_rows, 1)
+              pattern = r'(?m)^\s*case 19:\s*\n\s*Browser\.openUrl\(getParentActivity\(\), LocaleController\.getString\(R\.string\.PrivacyPolicyUrl\)\);\s*\n\s*break;'
+              match = re.search(pattern, s)
+              if not match:
+                  raise SystemExit("Could not find Privacy Policy click handler in SettingsActivity.java; file layout differs from expected source")
+              s = s[:match.end()] + "\n\n" + click_rows + s[match.end():]
           p.write_text(s, encoding="utf-8")
           print("SettingsActivity patched: VGRAM menu rows and click handlers are installed")
           PY
       - run: chmod +x gradlew
       - name: Build APK
         run: |
-          set -o pipefail
+          set -euo pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee build1.log
-          test -n "$(find TMessagesProj_AppStandalone/build/outputs/apk -type f -name '*.apk' -print -quit 2>/dev/null)" || { echo "Standalone APK was not produced"; exit 1; }
+          echo "APK files produced by Gradle:"
+          find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print || true
+          test -n "$(find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print -quit)" || { echo "No APK was produced. See build1.log above."; exit 1; }
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          APK=$(find TMessagesProj_AppStandalone/build/outputs/apk -type f -name '*.apk' -print | sort | head -n 1)
+          APK=$(find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print | sort | head -n 1)
           test -n "$APK" || { echo "No standalone APK found"; exit 1; }
           cp "$APK" VGRAM.apk
           gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 0.1 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 0.1 build, number ${GITHUB_RUN_NUMBER}."
