@@ -101,7 +101,7 @@ public class VgramAppearanceActivity extends BaseFragment {
         glassCard.addView(glassValue, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         glassCard.setOnClickListener(v -> {
             glass = !glass;
-            LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, glass);
+            VgramPluginManager.setEnabled(context, "liquid_glass", glass);
             prefs.edit().putBoolean(KEY_GLASS, glass).apply();
             glassValue.setText(glass ? "Включён в поддерживаемых элементах интерфейса" : "Выключен");
             glassCard.setBackground(cardBackground(accent, glass));
