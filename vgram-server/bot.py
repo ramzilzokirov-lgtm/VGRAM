@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 import httpx
@@ -16,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vgram-shop")
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8436409687"))
-DB_PATH = os.getenv("SHOP_DB_PATH", "/tmp/shop.sqlite3")
+DB_PATH = os.getenv("SHOP_DB_PATH") or os.getenv("DB_PATH") or "/var/data/shop.sqlite3"
 CATEGORIES = {
     "numbers": "📱 +888 номера",
     "stars": "⭐ Telegram Stars",
@@ -273,6 +274,90 @@ async def unbadge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
 
 
+async def tgbadge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Link a Telegram user ID to a VGRAM ID and issue a badge; bot admin only."""
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    raw = " ".join(context.args).split("|", 1)
+    left = raw[0].split() if raw else []
+    if len(left) != 2 or len(raw) != 2 or not raw[1].strip():
+        await update.message.reply_text("Формат: /tgbadge TELEGRAM_ID CODE | подпись")
+        return
+    telegram_id, code = left[0], left[1].upper()
+    if not telegram_id.isdigit() or len(telegram_id) > 20:
+        await update.message.reply_text("Telegram ID должен состоять только из цифр.")
+        return
+    api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
+    key = os.getenv("VGRAM_ADMIN_KEY", "")
+    if not key:
+        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY.")
+        return
+    headers = {"X-VGRAM-Admin-Key": key}
+    account_id = f"telegram:{telegram_id}"
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            linked = await client.post(f"{api}/admin/users", headers=headers, json={"account_id": account_id})
+            if not linked.is_success:
+                await update.message.reply_text(f"Не удалось связать аккаунт: HTTP {linked.status_code} — {linked.text[:180]}")
+                return
+            vgram_id = linked.json().get("vgram_id")
+            if not vgram_id:
+                await update.message.reply_text("API не вернул VGRAM ID.")
+                return
+            response = await client.put(
+                f"{api}/admin/users/{vgram_id}/badges/{code}",
+                headers=headers,
+                json={"label": raw[1].strip()},
+            )
+        if response.is_success:
+            await update.message.reply_text(f"✅ Бейдж {code} назначен Telegram ID {telegram_id} (VGRAM ID {vgram_id}).")
+        else:
+            await update.message.reply_text(f"Не удалось выдать бейдж: HTTP {response.status_code} — {response.text[:220]}")
+    except Exception as exc:
+        log.exception("Telegram profile badge issuance failed")
+        await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
+
+
+async def untgbadge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Revoke a badge from a Telegram-ID-linked account; bot admin only."""
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    if len(context.args) != 2 or not context.args[0].isdigit() or len(context.args[0]) > 20:
+        await update.message.reply_text("Формат: /untgbadge TELEGRAM_ID CODE")
+        return
+    telegram_id, code = context.args[0], context.args[1].upper()
+    api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
+    key = os.getenv("VGRAM_ADMIN_KEY", "")
+    if not key:
+        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY.")
+        return
+    account_id = f"telegram:{telegram_id}"
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            linked = await client.get(f"{api}/admin/users/{quote(account_id, safe='')}",
+                                      headers={"X-VGRAM-Admin-Key": key})
+            if linked.status_code == 404:
+                await update.message.reply_text("Этот Telegram ID ещё не связан с VGRAM.")
+                return
+            if not linked.is_success:
+                await update.message.reply_text(f"Не удалось найти аккаунт: HTTP {linked.status_code}")
+                return
+            vgram_id = linked.json().get("vgram_id")
+            response = await client.delete(
+                f"{api}/admin/users/{vgram_id}/badges/{code}",
+                headers={"X-VGRAM-Admin-Key": key},
+            )
+        if response.is_success:
+            await update.message.reply_text(f"✅ Бейдж {code} снят с Telegram ID {telegram_id}.")
+        else:
+            await update.message.reply_text(f"Не удалось снять бейдж: HTTP {response.status_code} — {response.text[:220]}")
+    except Exception as exc:
+        log.exception("Telegram profile badge revocation failed")
+        await update.message.reply_text(f"Ошибка связи с VGRAM API: {type(exc).__name__}")
+
+
 async def restock_nfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет доступа.")
@@ -468,7 +553,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception: pass
         await q.edit_message_text(f"Рассылка завершена: {sent} из {len(ids)}.", reply_markup=admin_menu())
     elif data == "adm:badgeshelp":
-        await q.edit_message_text("🏷 Управление бейджами VGRAM\n/badge VGRAM_ID CODE | подпись\n/unbadge VGRAM_ID CODE\nКоды: TESTER, OG, FRIENDS, TEAM, DEVELOPER, FOUNDER", reply_markup=admin_menu())
+        await q.edit_message_text("🏷 Управление бейджами VGRAM\n/badge VGRAM_ID CODE | подпись\n/unbadge VGRAM_ID CODE\n/tgbadge TELEGRAM_ID CODE | подпись\n/untgbadge TELEGRAM_ID CODE\nКоды: TESTER, OG, FRIENDS, TEAM, DEVELOPER, FOUNDER", reply_markup=admin_menu())
     elif data == "adm:nftstockhelp":
         await q.edit_message_text("🖼 Восстановить доступное количество NFT до сохранённого max_quantity. Это не создаёт выдуманные позиции. Команда: /restocknfts", reply_markup=admin_menu())
     elif data == "adm:menu":
@@ -495,6 +580,8 @@ def main():
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CommandHandler("badge", badge_cmd))
     app.add_handler(CommandHandler("unbadge", unbadge_cmd))
+    app.add_handler(CommandHandler("tgbadge", tgbadge_cmd))
+    app.add_handler(CommandHandler("untgbadge", untgbadge_cmd))
     app.add_handler(CommandHandler("restocknfts", restock_nfts))
     app.add_handler(CallbackQueryHandler(button))
     log.info("VGRAM shop bot starting")
