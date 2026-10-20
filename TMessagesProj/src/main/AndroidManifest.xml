@@ -712,8 +712,14 @@
 
         <activity
             android:name="org.telegram.ui.VgramServerActivity"
-            android:exported="false"
-            android:screenOrientation="unspecified" />
+            android:label="VGRAM Server"
+            android:exported="true"
+            android:screenOrientation="unspecified">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
     </application>
 
