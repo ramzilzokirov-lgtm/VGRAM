@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sqlite3
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from datetime import datetime, timezone
@@ -321,10 +322,12 @@ def start_health_server():
     log.info("Health server listening on port %s", port)
 
 def main():
-    if not TOKEN:
-        raise RuntimeError("Set BOT_TOKEN in Render environment variables.")
     init_db()
     start_health_server()
+    if not TOKEN:
+        log.error("BOT_TOKEN is missing. Set it in the Render environment variables to start the bot.")
+        while True:
+            time.sleep(60)
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
