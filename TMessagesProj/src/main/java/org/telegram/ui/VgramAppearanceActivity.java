@@ -12,6 +12,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -38,7 +39,7 @@ public class VgramAppearanceActivity extends BaseFragment {
     public View createView(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         accent = prefs.getInt(KEY_ACCENT, COLORS[0]);
-        glass = prefs.getBoolean(KEY_GLASS, true);
+        glass = LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS);
         applyAccent(accent);
 
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
@@ -95,13 +96,14 @@ public class VgramAppearanceActivity extends BaseFragment {
         root.addView(glassCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 16));
         TextView glassTitle = text(context, "Эффект жидкого стекла", 16, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true);
         glassCard.addView(glassTitle, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-        glassValue = text(context, glass ? "Включён для карточек предпросмотра" : "Выключен", 13, Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false);
+        glassValue = text(context, glass ? "Включён в поддерживаемых элементах интерфейса" : "Выключен", 13, Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false);
         glassValue.setPadding(0, AndroidUtilities.dp(5), 0, 0);
         glassCard.addView(glassValue, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         glassCard.setOnClickListener(v -> {
             glass = !glass;
+            LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, glass);
             prefs.edit().putBoolean(KEY_GLASS, glass).apply();
-            glassValue.setText(glass ? "Включён для карточек предпросмотра" : "Выключен");
+            glassValue.setText(glass ? "Включён в поддерживаемых элементах интерфейса" : "Выключен");
             glassCard.setBackground(cardBackground(accent, glass));
             card.setBackground(cardBackground(accent, glass));
         });
