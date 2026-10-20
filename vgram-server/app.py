@@ -41,6 +41,16 @@ def init_db():
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, id)")
         c.execute(
+            """CREATE TABLE IF NOT EXISTS user_badges (
+                vgram_id TEXT NOT NULL,
+                badge_code TEXT NOT NULL,
+                label TEXT NOT NULL,
+                issued_by TEXT NOT NULL,
+                issued_at TEXT NOT NULL,
+                PRIMARY KEY(vgram_id, badge_code)
+            )"""
+        )
+        c.execute(
             """CREATE TABLE IF NOT EXISTS nft_items (
                 nft_id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -274,6 +284,69 @@ def upsert_nft(
         ).fetchone()
         return dict(row)
 
+
+
+class BadgeIn(BaseModel):
+    label: str = Field(min_length=1, max_length=40)
+
+
+@app.get("/users/{vgram_id}/badges")
+def list_user_badges(vgram_id: str):
+    """Public VGRAM badge list for profile display."""
+    with db() as c:
+        user = c.execute("SELECT vgram_id FROM users WHERE vgram_id=?", (vgram_id,)).fetchone()
+        if not user:
+            raise HTTPException(404, "User not found")
+        rows = c.execute(
+            "SELECT badge_code,label,issued_by,issued_at FROM user_badges WHERE vgram_id=? ORDER BY issued_at",
+            (vgram_id,),
+        ).fetchall()
+        return {"vgram_id": vgram_id, "badges": [dict(row) for row in rows]}
+
+
+@app.put("/admin/users/{vgram_id}/badges/{badge_code}")
+def issue_user_badge(
+    vgram_id: str,
+    badge_code: str,
+    data: BadgeIn,
+    x_vgram_admin_key: str | None = Header(default=None),
+):
+    """Issue/replace a badge. Requires the private owner/admin key."""
+    auth(x_vgram_admin_key)
+    code = badge_code.strip().upper()
+    allowed = {"TESTER", "OG", "FRIENDS", "TEAM", "DEVELOPER", "FOUNDER"}
+    if code not in allowed:
+        raise HTTPException(400, "Unsupported badge code")
+    with db() as c:
+        user = c.execute("SELECT vgram_id FROM users WHERE vgram_id=?", (vgram_id,)).fetchone()
+        if not user:
+            raise HTTPException(404, "User not found")
+        c.execute(
+            """INSERT INTO user_badges(vgram_id,badge_code,label,issued_by,issued_at)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(vgram_id,badge_code) DO UPDATE SET
+                 label=excluded.label, issued_by=excluded.issued_by, issued_at=excluded.issued_at""",
+            (vgram_id, code, data.label.strip(), "project-owner", now_iso()),
+        )
+        return {"ok": True, "vgram_id": vgram_id, "badge_code": code, "label": data.label.strip()}
+
+
+@app.delete("/admin/users/{vgram_id}/badges/{badge_code}")
+def revoke_user_badge(
+    vgram_id: str,
+    badge_code: str,
+    x_vgram_admin_key: str | None = Header(default=None),
+):
+    """Revoke a badge using the private owner/admin key."""
+    auth(x_vgram_admin_key)
+    with db() as c:
+        cur = c.execute(
+            "DELETE FROM user_badges WHERE vgram_id=? AND badge_code=?",
+            (vgram_id, badge_code.strip().upper()),
+        )
+        if not cur.rowcount:
+            raise HTTPException(404, "Badge not found")
+        return {"ok": True, "vgram_id": vgram_id, "badge_code": badge_code.strip().upper()}
 
 # VGRAM native account and private chat API.
 from chat_api import router as chat_router
