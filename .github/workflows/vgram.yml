@@ -1,5 +1,8 @@
 name: VGRAM Build
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
 permissions:
   contents: write
 jobs:
