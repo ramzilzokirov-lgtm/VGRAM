@@ -101,7 +101,7 @@ public class VgramAppearanceActivity extends BaseFragment {
         glassCard.addView(glassValue, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         glassCard.setOnClickListener(v -> {
             glass = !glass;
-            LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, glass);
+            VgramPluginManager.setEnabled(context, "liquid_glass", glass);
             prefs.edit().putBoolean(KEY_GLASS, glass).apply();
             glassValue.setText(glass ? "Включён в поддерживаемых элементах интерфейса" : "Выключен");
             glassCard.setBackground(cardBackground(accent, glass));
@@ -118,6 +118,18 @@ public class VgramAppearanceActivity extends BaseFragment {
         badges.addView(text(context, "Бейджи, назначенные владельцем, отображаются рядом с именем в профиле. Управление доступно только владельцу через бота.", 14,
             Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
             LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
+
+        LinearLayout pluginsCard = new LinearLayout(context);
+        pluginsCard.setOrientation(LinearLayout.VERTICAL);
+        pluginsCard.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16));
+        pluginsCard.setBackground(cardBackground(accent, glass));
+        root.addView(pluginsCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 0));
+        pluginsCard.addView(text(context, "Плагины VGRAM", 17, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        pluginsCard.addView(text(context, "Включай и выключай встроенные расширения.", 14,
+            Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+        pluginsCard.setOnClickListener(v -> presentFragment(new VgramPluginsActivity()));
 
         fragmentView = scroll;
         return fragmentView;
