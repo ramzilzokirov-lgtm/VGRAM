@@ -367,8 +367,7 @@ def main():
     init_db()
     if not TOKEN:
         log.error("BOT_TOKEN is missing. Set it in the Render environment variables to start the bot.")
-        while True:
-            time.sleep(60)
+        return
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
