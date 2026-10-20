@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("vgram-shop")
 TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "8436409687"))
-DB_PATH = os.getenv("DB_PATH", os.getenv("VGRAM_DB_PATH", "vgram.db"))
+DB_PATH = os.getenv("SHOP_DB_PATH", "/tmp/shop.sqlite3")
 CATEGORIES = {
     "numbers": "📱 +888 номера",
     "stars": "⭐ Telegram Stars",
