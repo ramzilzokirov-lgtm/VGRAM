@@ -3,8 +3,6 @@ on:
   workflow_dispatch:
   push:
     branches: [master, finish-vgram-features, vgram-final-build]
-  pull_request:
-    branches: [master]
 permissions:
   contents: write
 
