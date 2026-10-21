@@ -61,6 +61,28 @@ def init_db():
         c.execute("""CREATE TABLE IF NOT EXISTS free_number_claims(
             user_id INTEGER PRIMARY KEY, number_id INTEGER NOT NULL UNIQUE,
             claimed_at TEXT NOT NULL)""")
+        # Permanent ownership ledger; migrate existing completed orders and free claims.
+        c.execute("""CREATE TABLE IF NOT EXISTS user_entitlements(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            entitlement_type TEXT NOT NULL,
+            reference_id TEXT NOT NULL,
+            label TEXT NOT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            granted_at TEXT NOT NULL,
+            source_order_id INTEGER UNIQUE,
+            UNIQUE(user_id, entitlement_type, reference_id))""")
+        c.execute("""INSERT OR IGNORE INTO user_entitlements
+            (user_id, entitlement_type, reference_id, label, details, granted_at, source_order_id)
+            SELECT o.user_id, 'purchase', CAST(o.product_id AS TEXT), p.name, o.total,
+                   COALESCE(o.created_at, ?), o.id
+            FROM orders o JOIN products p ON p.id=o.product_id
+            WHERE o.status='done'""", (now(),))
+        c.execute("""INSERT OR IGNORE INTO user_entitlements
+            (user_id, entitlement_type, reference_id, label, details, granted_at)
+            SELECT fc.user_id, 'free_number', CAST(fn.id AS TEXT), 'Бесплатный +7 номер',
+                   fn.phone, fc.claimed_at
+            FROM free_number_claims fc JOIN free_numbers fn ON fn.id=fc.number_id""")
 
 def now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -73,6 +95,7 @@ def main_menu():
             for key, label in CATEGORIES.items()]
     rows.append([InlineKeyboardButton("🎁 Получить бесплатный +7", callback_data="free7")])
     rows.append([InlineKeyboardButton("📦 Мои заказы", callback_data="myorders")])
+    rows.append([InlineKeyboardButton("🎁 Мои покупки и подарки", callback_data="myitems")])
     return InlineKeyboardMarkup(rows)
 
 def admin_menu():
@@ -469,6 +492,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⏳ В работу", callback_data=f"adm:status:{oid}:progress"),
                                                     InlineKeyboardButton("❌ Отклонить", callback_data=f"adm:status:{oid}:rejected")]]))
         except Exception: log.exception("Could not notify admin")
+    elif data == "myitems":
+        with db() as c:
+            rows = c.execute("""SELECT entitlement_type, label, details, granted_at
+                FROM user_entitlements WHERE user_id=? ORDER BY id DESC LIMIT 50""", (uid,)).fetchall()
+        lines = ["🎁 Твои полученные товары и подарки:", ""]
+        lines.extend([f"✅ {r['label']} — {r['details']} ({r['granted_at'][:10]})"
+                      for r in rows] or ["Пока нет завершённых покупок или подарков."])
+        await q.edit_message_text("\n".join(lines),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 Мои заказы", callback_data="myorders")],
+                                               [InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
     elif data == "myorders":
         with db() as c:
             rows = c.execute("SELECT o.id,o.total,o.status,p.name FROM orders o JOIN products p ON p.id=o.product_id WHERE o.user_id=? ORDER BY o.id DESC LIMIT 10", (uid,)).fetchall()
@@ -512,10 +545,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError: return
         if status not in STATUSES: return
         with db() as c:
-            row = c.execute("SELECT user_id FROM orders WHERE id=?", (int(oid),)).fetchone()
+            row = c.execute("""SELECT o.user_id,o.product_id,o.total,p.name
+                FROM orders o JOIN products p ON p.id=o.product_id WHERE o.id=?""", (int(oid),)).fetchone()
             if not row:
                 await q.edit_message_text("Заказ не найден."); return
             c.execute("UPDATE orders SET status=? WHERE id=?", (status, int(oid)))
+            if status == "done":
+                c.execute("""INSERT OR IGNORE INTO user_entitlements
+                    (user_id, entitlement_type, reference_id, label, details, granted_at, source_order_id)
+                    VALUES(?, 'purchase', ?, ?, ?, ?, ?)""",
+                    (row["user_id"], str(row["product_id"]), row["name"], row["total"], now(), int(oid)))
         await q.edit_message_text(f"Заказ #{oid}: {STATUSES[status]}", reply_markup=admin_menu())
         try: await context.bot.send_message(row["user_id"], f"Статус заказа #{oid}: {STATUSES[status]}")
         except Exception: pass
