@@ -2,11 +2,13 @@ name: VGRAM Build
 on:
   workflow_dispatch:
   push:
-    branches: [master]
-  pull_request:
-    branches: [master]
+    branches: [master, finish-vgram-features, vgram-final-build]
 permissions:
   contents: write
+
+concurrency:
+  group: vgram-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,6 +20,22 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Install Android NDK with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          for attempt in 1 2 3; do
+            if "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.2.12479018"; then
+              test -f "$ANDROID_HOME/ndk/27.2.12479018/source.properties"
+              exit 0
+            fi
+            echo "NDK installation attempt $attempt failed; retrying..."
+            rm -rf "$ANDROID_HOME/ndk/27.2.12479018" "$ANDROID_HOME/.temp"/* || true
+            sleep 5
+          done
+          echo "NDK installation failed after 3 attempts"
+          exit 1
       - name: Keep signing key between builds
         uses: actions/cache@v4
         with:
@@ -320,6 +338,10 @@ jobs:
                       }
                   });
                   list.addView(downloadButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 10, 0, 0));
+
+                  TextView docsButton = createButton(context, "Документация VGRAM");
+                  docsButton.setOnClickListener(v -> Browser.openUrl(getParentActivity(), "https://github.com/ramzilzokirov-lgtm/VGRAM/blob/master/docs/PLUGINS.md"));
+                  list.addView(docsButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 10, 0, 0));
 
                   notesView = new TextView(context);
                   notesView.setTextSize(14);

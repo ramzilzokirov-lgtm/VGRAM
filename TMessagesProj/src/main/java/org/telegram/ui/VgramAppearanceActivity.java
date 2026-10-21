@@ -30,6 +30,13 @@ public class VgramAppearanceActivity extends BaseFragment {
     private TextView previewTitle;
     private TextView glassValue;
 
+    private LinearLayout profilePalette;
+    private static final String KEY_PROFILE_BACKGROUND = "profile_background";
+    private static final int[] PROFILE_COLORS = new int[] {
+        0xFF24231F, 0xFF3A3933, 0xFF39433F, 0xFF3E3947,
+        0xFF3C4656, 0xFF51413E, 0xFF45483B
+    };
+
     private static final int[] COLORS = new int[] {
         0xFFC5B878, 0xFF8E9AAF, 0xFF9A8CB8, 0xFF7FAE9B,
         0xFFCB8F91, 0xFF7898C9, 0xFFB5A6A0, 0xFF9AA77D
@@ -57,7 +64,7 @@ public class VgramAppearanceActivity extends BaseFragment {
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(28));
-        scroll.addView(root, LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        scroll.addView(root, LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
 
         TextView intro = text(context, "Material 3 • Liquid Glass", 22, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true);
         root.addView(intro, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 6));
@@ -101,12 +108,23 @@ public class VgramAppearanceActivity extends BaseFragment {
         glassCard.addView(glassValue, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         glassCard.setOnClickListener(v -> {
             glass = !glass;
-            LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, glass);
+            VgramPluginManager.setEnabled(context, "liquid_glass", glass);
             prefs.edit().putBoolean(KEY_GLASS, glass).apply();
             glassValue.setText(glass ? "Включён в поддерживаемых элементах интерфейса" : "Выключен");
             glassCard.setBackground(cardBackground(accent, glass));
             card.setBackground(cardBackground(accent, glass));
         });
+
+        root.addView(text(context, "Фон профиля", 17, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 8));
+        root.addView(text(context, "Спокойные тёмные оттенки для шапки профиля. Изменение применяется при следующем открытии профиля.", 13,
+            Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 8));
+        profilePalette = new LinearLayout(context);
+        profilePalette.setOrientation(LinearLayout.HORIZONTAL);
+        profilePalette.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(profilePalette, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(54), 0, 0, 0, 14));
+        buildProfilePalette(context);
 
         LinearLayout badges = new LinearLayout(context);
         badges.setOrientation(LinearLayout.VERTICAL);
@@ -118,6 +136,18 @@ public class VgramAppearanceActivity extends BaseFragment {
         badges.addView(text(context, "Бейджи, назначенные владельцем, отображаются рядом с именем в профиле. Управление доступно только владельцу через бота.", 14,
             Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
             LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
+
+        LinearLayout pluginsCard = new LinearLayout(context);
+        pluginsCard.setOrientation(LinearLayout.VERTICAL);
+        pluginsCard.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16));
+        pluginsCard.setBackground(cardBackground(accent, glass));
+        root.addView(pluginsCard, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 14, 0, 0));
+        pluginsCard.addView(text(context, "Плагины VGRAM", 17, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        pluginsCard.addView(text(context, "Включай и выключай встроенные расширения.", 14,
+            Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
+        pluginsCard.setOnClickListener(v -> presentFragment(new VgramPluginsActivity()));
 
         fragmentView = scroll;
         return fragmentView;
@@ -153,6 +183,32 @@ public class VgramAppearanceActivity extends BaseFragment {
                 buildPalette(context);
                 View card = ((View) previewTitle.getParent());
                 card.setBackground(cardBackground(accent, glass));
+            });
+        }
+    }
+
+    private void buildProfilePalette(Context context) {
+        profilePalette.removeAllViews();
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        int selected = prefs.getInt(KEY_PROFILE_BACKGROUND, 0);
+        for (int color : PROFILE_COLORS) {
+            TextView swatch = new TextView(context);
+            swatch.setText(color == selected ? "✓" : "");
+            swatch.setTextColor(Color.WHITE);
+            swatch.setTextSize(18);
+            swatch.setTypeface(Typeface.DEFAULT_BOLD);
+            swatch.setGravity(Gravity.CENTER);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setShape(GradientDrawable.OVAL);
+            shape.setColor(color);
+            if (color == selected) shape.setStroke(AndroidUtilities.dp(3), Theme.getColor(Theme.key_windowBackgroundWhite));
+            swatch.setBackground(shape);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(AndroidUtilities.dp(36), AndroidUtilities.dp(36));
+            lp.rightMargin = AndroidUtilities.dp(8);
+            profilePalette.addView(swatch, lp);
+            swatch.setOnClickListener(v -> {
+                prefs.edit().putInt(KEY_PROFILE_BACKGROUND, color).apply();
+                buildProfilePalette(context);
             });
         }
     }
