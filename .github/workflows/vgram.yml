@@ -499,17 +499,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          APK="TMessagesProj/build/outputs/apk/afat/debug/app.apk"
-          if [ ! -f "$APK" ]; then
-            APK=$(find . -path '*/build/outputs/apk/afat/debug/*' -type f -name '*.apk' -print -quit)
+          # Only publish the real client APK. Do not pick the first APK from the
+          # workspace: TMessagesProj_AppTests and other variants are also built.
+          APK="TMessagesProj_App/build/outputs/apk/afat/debug/app.apk"
+          test -f "$APK" || { echo "Main client APK missing: $APK"; exit 1; }
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -n "$SDK_DIR" || { echo "Android SDK path is not configured"; exit 1; }
+          AAPT=$(find "$SDK_DIR/build-tools" -type f -name aapt -print 2>/dev/null | sort -V | tail -n 1)
+          test -n "$AAPT" && test -x "$AAPT" || { echo "aapt not found; cannot verify APK package"; exit 1; }
+          "$AAPT" dump badging "$APK" > apk-badging.txt
+          if ! grep -q "^package: name='org.telegram.messenger.beta'" apk-badging.txt; then
+            echo "Wrong APK package; refusing to publish:"
+            head -n 5 apk-badging.txt
+            exit 1
           fi
-          test -n "$APK" && test -f "$APK" || { echo "Expected universal afat debug APK was not produced"; exit 1; }
+          echo "Verified main client package:"
+          head -n 2 apk-badging.txt
+          ls -lh "$APK"
           cp "$APK" VGRAM.apk
           gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 1.01 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 1.01 build, number ${GITHUB_RUN_NUMBER}."
       - uses: actions/upload-artifact@v4
         with:
-          name: apk
-          path: "**/build/outputs/apk/**/*.apk"
+          name: vgram-main-apk
+          path: TMessagesProj_App/build/outputs/apk/afat/debug/app.apk
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
