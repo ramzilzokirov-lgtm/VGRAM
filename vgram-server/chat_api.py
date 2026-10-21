@@ -67,7 +67,7 @@ def award_signup_stars(c, vgram_id: str):
         (vgram_id, 1000, "registration_bonus", event_key, now()),
     )
     c.execute("INSERT OR IGNORE INTO star_wallets(vgram_id,balance,updated_at) VALUES(?,0,?)",
-              (vgram_id, 0, now()))
+              (vgram_id, now()))
     if cur.rowcount:
         c.execute("UPDATE star_wallets SET balance=balance+1000,updated_at=? WHERE vgram_id=?",
                   (now(), vgram_id))
