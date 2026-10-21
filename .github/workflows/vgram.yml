@@ -1,10 +1,7 @@
 name: VGRAM Build
 on:
+  # Run Android builds manually only, after the app changes are ready.
   workflow_dispatch:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
 permissions:
   contents: write
 jobs:
@@ -465,7 +462,7 @@ jobs:
           find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print || true
           test -n "$(find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print -quit)" || { echo "No APK was produced. See build1.log above."; exit 1; }
       - name: Publish GitHub Release
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push' && !contains(github.event.head_commit.message, '[ci-only]')
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
