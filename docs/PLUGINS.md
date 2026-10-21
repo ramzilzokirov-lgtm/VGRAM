@@ -10,6 +10,8 @@
 | --- | --- | --- | --- |
 | `liquid_glass` | Жидкое стекло | Флаг Liquid Glass в поддерживаемых элементах интерфейса | Включён |
 | `profile_badges` | Бейджи профиля | Отображение бейджей рядом с именем в профиле | Включён |
+| `animations` | Анимации интерфейса | Анимации стикеров, эмодзи, звонков и частицы | Текущее состояние Lite Mode |
+| `autoplay_media` | Автовоспроизведение медиа | Автовоспроизведение GIF и видео | Текущее состояние Lite Mode |
 
 Настройки сохраняются локально в SharedPreferences, в файле настроек `vgram_plugins`. Состояние переживает перезапуск приложения.
 
@@ -72,7 +74,7 @@ if (VgramPluginManager.isEnabled(context, "example_plugin")) {
 - `VgramPlugin.java` — контракт встроенного плагина.
 - `VgramPluginManager.java` — реестр, хранение состояния и обработка переключателя Liquid Glass.
 - `VgramPluginsActivity.java` — экран управления.
-- `VgramAppearanceActivity.java` — переход к экрану плагинов.
+- `VgramAppearanceActivity.java` — выбор акцента, фона профиля и переход к экрану плагинов.
 - `ProfileActivity.java` — проверка флага для бейджей профиля.
 
 
