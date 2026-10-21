@@ -30,7 +30,7 @@ jobs:
       - name: Rename app, set version, disable official update check
         run: |
           find TMessagesProj/src/main/res -name 'strings*.xml' -exec sed -i -E 's|(<string name="AppName(Beta)?"[^>]*>)[^<]*|\1VGRAM|' {} +
-          sed -i -E 's/^APP_VERSION_NAME=.*/APP_VERSION_NAME=0.1/' gradle.properties
+          sed -i -E 's/^APP_VERSION_NAME=.*/APP_VERSION_NAME=1.01/' gradle.properties
           sed -i 's/CHECK_UPDATES = true;/CHECK_UPDATES = false;/' TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java
           grep -rn 'name="AppName' TMessagesProj/src/main/res/values/ || true
           grep -n 'APP_VERSION' gradle.properties || true
@@ -164,7 +164,7 @@ jobs:
                           LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 12));
 
                   TextView footer = new TextView(context);
-                  footer.setText("VGRAM 0.1");
+                  footer.setText("VGRAM 1.01");
                   footer.setTextSize(13);
                   footer.setGravity(Gravity.CENTER);
                   footer.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
@@ -502,7 +502,7 @@ jobs:
           APK=$(find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print | sort | head -n 1)
           test -n "$APK" || { echo "No standalone APK found"; exit 1; }
           cp "$APK" VGRAM.apk
-          gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 0.1 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 0.1 build, number ${GITHUB_RUN_NUMBER}."
+          gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 1.01 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 1.01 build, number ${GITHUB_RUN_NUMBER}."
       - uses: actions/upload-artifact@v4
         with:
           name: apk
