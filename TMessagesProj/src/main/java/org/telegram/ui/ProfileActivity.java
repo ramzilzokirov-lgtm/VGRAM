@@ -5229,7 +5229,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         topView = new TopView(context);
         topView.setBackgroundColorId(peerColor, false);
-        topView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
+        int vgramProfileBackground = context.getSharedPreferences("vgram_appearance", Context.MODE_PRIVATE).getInt("profile_background", 0);
+        topView.setBackgroundColor(vgramProfileBackground == 0 ? getThemedColor(Theme.key_windowBackgroundGray) : vgramProfileBackground);
         frameLayout.addView(topView);
         contentView.blurBehindViews.add(topView);
 
