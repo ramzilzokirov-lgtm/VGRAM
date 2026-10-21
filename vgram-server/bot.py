@@ -94,6 +94,7 @@ def main_menu():
     rows = [[InlineKeyboardButton(label, callback_data=f"cat:{key}")]
             for key, label in CATEGORIES.items()]
     rows.append([InlineKeyboardButton("🎁 Получить бесплатный +7", callback_data="free7")])
+    rows.append([InlineKeyboardButton("🧪 Бесплатные публичные SMS", callback_data="freesms")])
     rows.append([InlineKeyboardButton("📦 Мои заказы", callback_data="myorders")])
     rows.append([InlineKeyboardButton("🎁 Мои покупки и подарки", callback_data="myitems")])
     return InlineKeyboardMarkup(rows)
@@ -453,6 +454,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(ADMIN_ID, f"🎁 Выдан бесплатный +7 номер\\nНомер: {available['phone']}\\nПользователь: {uid} (@{q.from_user.username or 'без username'})")
         except Exception:
             log.exception("Could not notify admin about free number")
+    elif data == "freesms":
+        await q.edit_message_text(
+            "🧪 Бесплатные публичные SMS для тестирования\\n\\n"
+            "Открытые номера общие: входящие сообщения могут видеть другие люди. "
+            "Сервисы часто блокируют такие номера, поэтому получение кода не гарантируется. "
+            "Не используй их для важных аккаунтов или личных данных.\\n\\n"
+            "VGRAM не покупает номера и не списывает деньги за этот раздел.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🌐 Открыть бесплатные номера", url="https://onlinesim.io/#free")],
+                [InlineKeyboardButton("⬅️ В магазин", callback_data="home")],
+            ]),
+        )
     elif data.startswith("cat:"):
         category = data.split(":", 1)[1]
         if category not in CATEGORIES: return
