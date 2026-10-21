@@ -95,6 +95,7 @@ def main_menu():
             for key, label in CATEGORIES.items()]
     rows.append([InlineKeyboardButton("🎁 Получить бесплатный +7", callback_data="free7")])
     rows.append([InlineKeyboardButton("🧪 Бесплатные публичные SMS", callback_data="freesms")])
+    rows.append([InlineKeyboardButton("📖 Инструкция", callback_data="instruction")])
     rows.append([InlineKeyboardButton("📦 Мои заказы", callback_data="myorders")])
     rows.append([InlineKeyboardButton("🎁 Мои покупки и подарки", callback_data="myitems")])
     return InlineKeyboardMarkup(rows)
@@ -126,7 +127,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🛍 Добро пожаловать в магазин!\n\nВыбери категорию:", reply_markup=main_menu())
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Команды:\n/start — магазин\n/help — помощь\n/health — статус")
+    await update.message.reply_text(
+        "📖 ИНСТРУКЦИЯ VGRAM SHOP\\n\\n"
+        "🛍 ПОКУПКА\\n"
+        "1. Выбери категорию и товар.\\n"
+        "2. Нажми «Заказать 1 шт.» — бот создаст заявку.\\n"
+        "3. Дождись подтверждения администратора: заявка не означает, что товар уже оплачен или выдан.\\n\\n"
+        "📦 «Мои заказы» — статусы заявок.\\n"
+        "🎁 «Мои покупки и подарки» — завершённые покупки и выданные подарки.\\n"
+        "🎁 БЕСПЛАТНЫЙ +7\\n"
+        "Выдаётся один раз на Telegram-аккаунт, если администратор добавил свободный номер.\\n\\n"
+        "🧪 ПУБЛИЧНЫЕ SMS\\n"
+        "Открытые номера общие: сообщения могут видеть другие люди, сервисы могут блокировать номера, а SMS не гарантированы. Не используй их для важных аккаунтов или личных данных.\\n\\n"
+        "Оплата автоматически не списывается. Стоимость и условия уточняй у администратора.\\n\\n"
+        "Команды: /start — магазин; /help — инструкция; /health — статус бота."
+    )
     
 async def health(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("OK — бот работает.")
@@ -429,7 +444,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("adm:") and uid != ADMIN_ID:
         await q.edit_message_text("⛔ Нет доступа."); return
 
-    if data == "free7":
+    if data == "instruction":
+        await q.edit_message_text(
+            "📖 ИНСТРУКЦИЯ VGRAM SHOP\\n\\n"
+            "🛍 ПОКУПКА\\n"
+            "Выбери категорию → товар → «Заказать 1 шт.». Это заявка, а не мгновенная оплата или выдача. Дождись ответа администратора.\\n\\n"
+            "📦 «Мои заказы» — статусы заявок.\\n"
+            "🎁 «Мои покупки и подарки» — завершённые покупки и подарки.\\n"
+            "🎁 «Бесплатный +7» — один номер на аккаунт, если есть свободный номер от администратора.\\n"
+            "🧪 «Бесплатные публичные SMS» — общие номера для тестирования; сообщения могут быть публичными, получение SMS не гарантируется. Не используй для важных аккаунтов.\\n\\n"
+            "Вопросы по цене и заказу — администратору.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛍 В магазин", callback_data="home")],
+                [InlineKeyboardButton("🧪 Публичные SMS", callback_data="freesms")],
+            ]),
+        )
+    elif data == "free7":
         if uid == ADMIN_ID:
             await q.edit_message_text("🎁 Управление бесплатными +7 номерами\\nДобавляй номера командой /addnumber +7XXXXXXXXXX", reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📊 Остаток и выдачи", callback_data="adm:free7")],
