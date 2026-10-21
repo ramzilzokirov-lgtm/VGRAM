@@ -437,6 +437,7 @@ jobs:
           rows = '''
           items.add(SettingCell.Factory.of(26, IconBackgroundColors.BLUE_LIGHT.top, IconBackgroundColors.BLUE_LIGHT.bottom, R.drawable.settings_faq, "Обновления VGRAM"));
           items.add(SettingCell.Factory.of(27, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_policy, "Разработчики"));
+          items.add(SettingCell.Factory.of(28, IconBackgroundColors.BLUE_LIGHT.top, IconBackgroundColors.BLUE_LIGHT.bottom, R.drawable.settings_faq, "Свой сервер VGRAM"));
           '''.strip("\n")
           if '"Обновления VGRAM"' not in s:
               if row_anchor not in s:
@@ -449,6 +450,9 @@ jobs:
                 break;
             case 27:
                 presentSettingFragment(new VgramDevelopersActivity());
+                break;
+            case 28:
+                getParentActivity().startActivity(new android.content.Intent(getParentActivity(), VgramServerActivity.class));
                 break;
           '''.rstrip()
           if 'case 26:' not in s:
