@@ -454,6 +454,15 @@ jobs:
           print("SettingsActivity patched: VGRAM menu rows and click handlers are installed")
           PY
       - run: chmod +x gradlew
+      - name: Fix VGRAM appearance screen LayoutHelper call
+        run: |
+          FILE=TMessagesProj/src/main/java/org/telegram/ui/VgramAppearanceActivity.java
+          if [ -f "$FILE" ]; then
+            sed -i 's/LayoutHelper\.createScroll(LayoutHelper\.MATCH_PARENT, LayoutHelper\.WRAP_CONTENT)/LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP)/g' "$FILE"
+            echo "Patched createScroll call in VgramAppearanceActivity.java"
+          else
+            echo "VgramAppearanceActivity.java is not present in this source revision; nothing to patch."
+          fi
       - name: Build APK
         run: |
           set -euo pipefail
