@@ -489,7 +489,7 @@ jobs:
       - name: Build APK
         run: |
           set -euo pipefail
-          ./gradlew assembleDebug --stacktrace 2>&1 | tee build1.log
+          ./gradlew assembleAfatDebug --stacktrace 2>&1 | tee build1.log
           echo "APK files produced by Gradle:"
           find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print || true
           test -n "$(find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print -quit)" || { echo "No APK was produced. See build1.log above."; exit 1; }
@@ -499,8 +499,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          APK=$(find . -path '*/build/outputs/apk/*' -type f -name '*.apk' -print | sort | head -n 1)
-          test -n "$APK" || { echo "No standalone APK found"; exit 1; }
+          APK="TMessagesProj/build/outputs/apk/afat/debug/app.apk"
+          if [ ! -f "$APK" ]; then
+            APK=$(find . -path '*/build/outputs/apk/afat/debug/*' -type f -name '*.apk' -print -quit)
+          fi
+          test -n "$APK" && test -f "$APK" || { echo "Expected universal afat debug APK was not produced"; exit 1; }
           cp "$APK" VGRAM.apk
           gh release create "build-${GITHUB_RUN_NUMBER}" VGRAM.apk --title "VGRAM 1.01 (build ${GITHUB_RUN_NUMBER})" --notes "Automatic VGRAM 1.01 build, number ${GITHUB_RUN_NUMBER}."
       - uses: actions/upload-artifact@v4
