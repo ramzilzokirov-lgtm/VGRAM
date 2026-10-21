@@ -107,6 +107,7 @@ def admin_menu():
         [InlineKeyboardButton("👥 Пользователи", callback_data="adm:users"),
          InlineKeyboardButton("📣 Рассылка", callback_data="adm:broadcasthelp")],
         [InlineKeyboardButton("🎁 Бесплатные +7 номера", callback_data="adm:free7")],
+        [InlineKeyboardButton("📈 Остатки +888 / +7", callback_data="adm:inventory")],
         [InlineKeyboardButton("🏷 Бейджи VGRAM", callback_data="adm:badgeshelp")],
         [InlineKeyboardButton("🖼 Восстановить остатки NFT", callback_data="adm:nftstockhelp")],
     ])
@@ -507,6 +508,31 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rows = c.execute("SELECT o.id,o.total,o.status,p.name FROM orders o JOIN products p ON p.id=o.product_id WHERE o.user_id=? ORDER BY o.id DESC LIMIT 10", (uid,)).fetchall()
         text = "📦 Твои заказы:\n\n" + ("\n".join(f"#{r['id']} {r['name']} — {r['total']} — {STATUSES.get(r['status'], r['status'])}" for r in rows) if rows else "Заказов пока нет.")
         await q.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В магазин", callback_data="home")]]))
+    elif data == "adm:inventory":
+        with db() as c:
+            products = c.execute("""
+                SELECT category, COUNT(*) AS items, COALESCE(SUM(stock), 0) AS stock
+                FROM products WHERE active=1 GROUP BY category
+            """).fetchall()
+            free_available = c.execute("SELECT COUNT(*) n FROM free_numbers WHERE status='available'").fetchone()["n"]
+            free_claimed = c.execute("SELECT COUNT(*) n FROM free_numbers WHERE status='claimed'").fetchone()["n"]
+            total_orders = c.execute("SELECT COUNT(*) n FROM orders").fetchone()["n"]
+            pending_orders = c.execute("SELECT COUNT(*) n FROM orders WHERE status IN ('new','progress')").fetchone()["n"]
+        stats = {row["category"]: row for row in products}
+        lines = ["📈 Остатки магазина", ""]
+        numbers = stats.get("numbers")
+        lines.append(f"📱 +888: активных карточек — {numbers['items'] if numbers else 0}; остаток по карточкам — {numbers['stock'] if numbers else 0}")
+        lines.append(f"🎁 +7: свободно реальных номеров — {free_available}; выдано — {free_claimed}")
+        for key, label in (("stars", "⭐ Stars"), ("premium", "💎 Premium"), ("nfts", "🖼 NFT")):
+            row = stats.get(key)
+            lines.append(f"{label}: карточек — {row['items'] if row else 0}; остаток — {row['stock'] if row else 0}")
+        lines.extend(["", f"📦 Заказов всего: {total_orders}", f"⏳ Ожидают обработки: {pending_orders}",
+                      "", "Важно: остаток карточек +888 — это количество в каталоге, не проверка активности каждого номера.",
+                      "Для бесплатных +7 добавляй только реальные номера с разрешённым доступом: /addnumber +7XXXXXXXXXX"])
+        await q.edit_message_text("\\n".join(lines), reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Обновить", callback_data="adm:inventory")],
+            [InlineKeyboardButton("🎁 Управление +7", callback_data="adm:free7")],
+            [InlineKeyboardButton("⬅️ Панель", callback_data="adm:menu")]]))
     elif data == "adm:free7":
         with db() as c:
             available = c.execute("SELECT COUNT(*) n FROM free_numbers WHERE status='available'").fetchone()["n"]
