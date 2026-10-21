@@ -1,6 +1,6 @@
 import os
-import subprocess
-import sys
+import hashlib
+import hmac
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -40,6 +40,17 @@ def init_db():
             "CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id TEXT NOT NULL, recipient_id TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL)"
         )
         c.execute("CREATE INDEX IF NOT EXISTS idx_messages_recipient ON messages(recipient_id, id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS auth_credentials (
+            username TEXT PRIMARY KEY,
+            account_id TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            vgram_id TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
         c.execute(
             """CREATE TABLE IF NOT EXISTS user_badges (
                 vgram_id TEXT NOT NULL,
@@ -69,27 +80,9 @@ def init_db():
 
 @app.on_event("startup")
 def startup():
-    global _bot_process
+    # The Telegram bot runs only in the dedicated vgram-shop-bot worker.
+    # Do not start a second getUpdates poller from the HTTP API service.
     init_db()
-    # FastAPI owns Render's public PORT; run the Telegram bot without a second HTTP listener.
-    token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
-    if token and os.getenv("VGRAM_DISABLE_BOT", "").lower() not in ("1", "true", "yes"):
-        _bot_process = subprocess.Popen(
-            [sys.executable, os.path.join(os.path.dirname(__file__), "bot.py")],
-            cwd=os.path.dirname(__file__),
-            env=os.environ.copy(),
-        )
-
-@app.on_event("shutdown")
-def shutdown():
-    global _bot_process
-    if _bot_process is not None and _bot_process.poll() is None:
-        _bot_process.terminate()
-        try:
-            _bot_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            _bot_process.kill()
-        _bot_process = None
 
 
 def auth(key):
@@ -109,6 +102,16 @@ def new_id(c):
 
 class UserIn(BaseModel):
     account_id: str = Field(min_length=1, max_length=128)
+
+
+class AuthIn(BaseModel):
+    username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_]+$")
+    password: str = Field(min_length=10, max_length=128)
+
+
+class ChatMessageIn(BaseModel):
+    recipient_id: str = Field(min_length=1, max_length=32)
+    body: str = Field(min_length=1, max_length=4000)
 
 
 class MessageIn(BaseModel):
@@ -132,7 +135,104 @@ class NFTItemIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "vgram-server", "version": "0.2.0"}
+    return {"ok": True, "service": "vgram-server", "version": "0.3.0"}
+
+
+def create_session(c, vgram_id: str):
+    token = secrets.token_urlsafe(32)
+    c.execute("INSERT INTO sessions(token,vgram_id,created_at) VALUES(?,?,?)",
+              (token, vgram_id, now_iso()))
+    return token
+
+
+def require_session(authorization: str | None):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Please sign in")
+    token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(401, "Please sign in")
+    with db() as c:
+        row = c.execute(
+            "SELECT s.vgram_id,u.active FROM sessions s JOIN users u ON u.vgram_id=s.vgram_id WHERE s.token=?",
+            (token,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(401, "Session expired; sign in again")
+    if not row["active"]:
+        raise HTTPException(403, "Account inactive")
+    return row["vgram_id"]
+
+
+@app.post("/auth/register")
+def register(data: AuthIn):
+    username = data.username.lower()
+    salt = secrets.token_hex(16)
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256", data.password.encode("utf-8"), bytes.fromhex(salt), 200_000
+    ).hex()
+    with db() as c:
+        if c.execute("SELECT 1 FROM auth_credentials WHERE username=?", (username,)).fetchone():
+            raise HTTPException(409, "This username is already registered")
+        vid = new_id(c)
+        created = now_iso()
+        c.execute("INSERT INTO users(account_id,vgram_id,created_at,active) VALUES(?,?,?,1)",
+                  (username, vid, created))
+        c.execute("INSERT INTO auth_credentials(username,account_id,password_hash,salt) VALUES(?,?,?,?)",
+                  (username, username, password_hash, salt))
+        token = create_session(c, vid)
+    return {"access_token": token, "token_type": "bearer", "vgram_id": vid}
+
+
+@app.post("/auth/login")
+def login(data: AuthIn):
+    username = data.username.lower()
+    with db() as c:
+        row = c.execute(
+            """SELECT a.password_hash,a.salt,u.vgram_id,u.active
+               FROM auth_credentials a JOIN users u ON u.account_id=a.account_id
+               WHERE a.username=?""", (username,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(401, "Incorrect username or password")
+        candidate = hashlib.pbkdf2_hmac(
+            "sha256", data.password.encode("utf-8"), bytes.fromhex(row["salt"]), 200_000
+        ).hex()
+        if not hmac.compare_digest(candidate, row["password_hash"]):
+            raise HTTPException(401, "Incorrect username or password")
+        if not row["active"]:
+            raise HTTPException(403, "Account inactive")
+        token = create_session(c, row["vgram_id"])
+    return {"access_token": token, "token_type": "bearer", "vgram_id": row["vgram_id"]}
+
+
+@app.post("/chat/send")
+def chat_send(data: ChatMessageIn, authorization: str | None = Header(default=None)):
+    sender_id = require_session(authorization)
+    recipient_id = data.recipient_id.strip().upper()
+    with db() as c:
+        recipient = c.execute("SELECT active FROM users WHERE vgram_id=?", (recipient_id,)).fetchone()
+        if not recipient:
+            raise HTTPException(404, "Recipient VGRAM ID not found")
+        if not recipient["active"]:
+            raise HTTPException(403, "Recipient account inactive")
+        cur = c.execute(
+            "INSERT INTO messages(sender_id,recipient_id,body,created_at) VALUES(?,?,?,?)",
+            (sender_id, recipient_id, data.body.strip(), now_iso()),
+        )
+        return {"message_id": cur.lastrowid, "status": "stored"}
+
+
+@app.get("/chat/inbox")
+def chat_inbox(limit: int = 50, authorization: str | None = Header(default=None)):
+    recipient_id = require_session(authorization)
+    if not 1 <= limit <= 100:
+        raise HTTPException(400, "limit must be 1..100")
+    with db() as c:
+        rows = c.execute(
+            "SELECT id,sender_id,recipient_id,body,created_at FROM messages WHERE recipient_id=? ORDER BY id DESC LIMIT ?",
+            (recipient_id, limit),
+        ).fetchall()
+    return {"messages": [dict(row) for row in rows]}
 
 
 @app.post("/admin/users")
