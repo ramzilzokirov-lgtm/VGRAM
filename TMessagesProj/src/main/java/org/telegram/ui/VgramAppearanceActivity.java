@@ -30,6 +30,13 @@ public class VgramAppearanceActivity extends BaseFragment {
     private TextView previewTitle;
     private TextView glassValue;
 
+    private LinearLayout profilePalette;
+    private static final String KEY_PROFILE_BACKGROUND = "profile_background";
+    private static final int[] PROFILE_COLORS = new int[] {
+        0xFF24231F, 0xFF3A3933, 0xFF39433F, 0xFF3E3947,
+        0xFF3C4656, 0xFF51413E, 0xFF45483B
+    };
+
     private static final int[] COLORS = new int[] {
         0xFFC5B878, 0xFF8E9AAF, 0xFF9A8CB8, 0xFF7FAE9B,
         0xFFCB8F91, 0xFF7898C9, 0xFFB5A6A0, 0xFF9AA77D
@@ -108,6 +115,17 @@ public class VgramAppearanceActivity extends BaseFragment {
             card.setBackground(cardBackground(accent, glass));
         });
 
+        root.addView(text(context, "Фон профиля", 17, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), true),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 10, 0, 8));
+        root.addView(text(context, "Спокойные тёмные оттенки для шапки профиля. Изменение применяется при следующем открытии профиля.", 13,
+            Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2), false),
+            LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 8));
+        profilePalette = new LinearLayout(context);
+        profilePalette.setOrientation(LinearLayout.HORIZONTAL);
+        profilePalette.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(profilePalette, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(54), 0, 0, 0, 14));
+        buildProfilePalette(context);
+
         LinearLayout badges = new LinearLayout(context);
         badges.setOrientation(LinearLayout.VERTICAL);
         badges.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16), AndroidUtilities.dp(16));
@@ -165,6 +183,32 @@ public class VgramAppearanceActivity extends BaseFragment {
                 buildPalette(context);
                 View card = ((View) previewTitle.getParent());
                 card.setBackground(cardBackground(accent, glass));
+            });
+        }
+    }
+
+    private void buildProfilePalette(Context context) {
+        profilePalette.removeAllViews();
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        int selected = prefs.getInt(KEY_PROFILE_BACKGROUND, 0);
+        for (int color : PROFILE_COLORS) {
+            TextView swatch = new TextView(context);
+            swatch.setText(color == selected ? "✓" : "");
+            swatch.setTextColor(Color.WHITE);
+            swatch.setTextSize(18);
+            swatch.setTypeface(Typeface.DEFAULT_BOLD);
+            swatch.setGravity(Gravity.CENTER);
+            GradientDrawable shape = new GradientDrawable();
+            shape.setShape(GradientDrawable.OVAL);
+            shape.setColor(color);
+            if (color == selected) shape.setStroke(AndroidUtilities.dp(3), Theme.getColor(Theme.key_windowBackgroundWhite));
+            swatch.setBackground(shape);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(AndroidUtilities.dp(36), AndroidUtilities.dp(36));
+            lp.rightMargin = AndroidUtilities.dp(8);
+            profilePalette.addView(swatch, lp);
+            swatch.setOnClickListener(v -> {
+                prefs.edit().putInt(KEY_PROFILE_BACKGROUND, color).apply();
+                buildProfilePalette(context);
             });
         }
     }
