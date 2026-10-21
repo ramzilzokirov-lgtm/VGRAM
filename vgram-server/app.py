@@ -51,6 +51,19 @@ def init_db():
             vgram_id TEXT NOT NULL,
             created_at TEXT NOT NULL
         )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS star_wallets (
+            vgram_id TEXT PRIMARY KEY,
+            balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS star_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vgram_id TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            event_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )""")
         c.execute(
             """CREATE TABLE IF NOT EXISTS user_badges (
                 vgram_id TEXT NOT NULL,
@@ -90,6 +103,24 @@ def auth(key):
         raise HTTPException(503, "VGRAM_ADMIN_KEY is not configured")
     if not key or not secrets.compare_digest(key, ADMIN_KEY):
         raise HTTPException(401, "Unauthorized")
+
+
+def award_signup_stars(c, vgram_id: str):
+    # Idempotent: one registration bonus per VGRAM account, never on login.
+    event_key = f"signup:{vgram_id}"
+    cur = c.execute(
+        "INSERT OR IGNORE INTO star_ledger(vgram_id,amount,reason,event_key,created_at) VALUES(?,?,?,?,?)",
+        (vgram_id, 1000, "registration_bonus", event_key, now_iso()),
+    )
+    c.execute(
+        "INSERT OR IGNORE INTO star_wallets(vgram_id,balance,updated_at) VALUES(?,0,?)",
+        (vgram_id, now_iso()),
+    )
+    if cur.rowcount:
+        c.execute(
+            "UPDATE star_wallets SET balance=balance+1000,updated_at=? WHERE vgram_id=?",
+            (now_iso(), vgram_id),
+        )
 
 
 def new_id(c):
@@ -180,7 +211,8 @@ def register(data: AuthIn):
         c.execute("INSERT INTO auth_credentials(username,account_id,password_hash,salt) VALUES(?,?,?,?)",
                   (username, username, password_hash, salt))
         token = create_session(c, vid)
-    return {"access_token": token, "token_type": "bearer", "vgram_id": vid}
+        award_signup_stars(c, vid)
+    return {"access_token": token, "token_type": "bearer", "vgram_id": vid, "bonus_stars": 1000}
 
 
 @app.post("/auth/login")
@@ -203,6 +235,24 @@ def login(data: AuthIn):
             raise HTTPException(403, "Account inactive")
         token = create_session(c, row["vgram_id"])
     return {"access_token": token, "token_type": "bearer", "vgram_id": row["vgram_id"]}
+
+
+
+@app.get("/account/wallet")
+def account_wallet(authorization: str | None = Header(default=None)):
+    vgram_id = require_session(authorization)
+    with db() as c:
+        row = c.execute(
+            "SELECT balance FROM star_wallets WHERE vgram_id=?", (vgram_id,)
+        ).fetchone()
+        if not row:
+            return {"vgram_id": vgram_id, "balance": 0, "currency": "VGRAM_STARS"}
+        history = c.execute(
+            "SELECT amount,reason,created_at FROM star_ledger WHERE vgram_id=? ORDER BY id DESC LIMIT 50",
+            (vgram_id,),
+        ).fetchall()
+        return {"vgram_id": vgram_id, "balance": row["balance"],
+                "currency": "VGRAM_STARS", "transactions": [dict(x) for x in history]}
 
 
 @app.post("/chat/send")
