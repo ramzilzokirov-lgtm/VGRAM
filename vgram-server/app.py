@@ -374,6 +374,60 @@ def list_nfts(limit: int = 50):
         return {"items": [dict(row) for row in rows]}
 
 
+
+@app.post("/admin/nfts/sync-telegram-gifts")
+async def sync_telegram_gifts(x_vgram_admin_key: str | None = Header(default=None)):
+    """Sync primary gift prices from Telegram's official Bot API (prices in Stars)."""
+    auth(x_vgram_admin_key)
+    bot_token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+    if not bot_token:
+        raise HTTPException(503, "BOT_TOKEN is not configured on the VGRAM API service")
+    import httpx
+    url = f"https://api.telegram.org/bot{bot_token}/getAvailableGifts"
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        raise HTTPException(502, "Could not fetch official Telegram gift catalogue")
+    if not payload.get("ok") or not isinstance(payload.get("result", {}).get("gifts"), list):
+        raise HTTPException(502, "Telegram returned an invalid gift catalogue")
+    synced = 0
+    with db() as c:
+        for gift in payload["result"]["gifts"]:
+            gift_id = str(gift.get("id", "")).strip()
+            stars = gift.get("star_count")
+            if not gift_id or not isinstance(stars, int) or stars < 0:
+                continue
+            sticker = gift.get("sticker") or {}
+            title = str(gift.get("name") or gift_id)[:200]
+            total = gift.get("total_count")
+            remaining = gift.get("remaining_count")
+            if not isinstance(total, int) or total < 0:
+                total = 0
+            if not isinstance(remaining, int) or remaining < 0:
+                remaining = total
+            remaining = min(remaining, total) if total > 0 else 0
+            c.execute(
+                """INSERT INTO nft_items
+                   (nft_id,title,source,price_minor,currency,max_quantity,
+                    available_quantity,active,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(nft_id) DO UPDATE SET
+                     title=excluded.title, source=excluded.source,
+                     price_minor=excluded.price_minor, currency=excluded.currency,
+                     max_quantity=excluded.max_quantity,
+                     available_quantity=excluded.available_quantity,
+                     active=excluded.active, updated_at=excluded.updated_at""",
+                (gift_id, title, "Telegram official gift catalogue", stars, "XTR",
+                 total, remaining, 1, now_iso()),
+            )
+            synced += 1
+    return {"ok": True, "synced": synced, "price_currency": "XTR",
+            "note": "Official initial gift prices in Telegram Stars; not collectible resale market prices."}
+
+
 @app.get("/admin/nfts")
 def admin_list_nfts(x_vgram_admin_key: str | None = Header(default=None)):
     """Admin inventory view. Requires VGRAM_ADMIN_KEY."""
