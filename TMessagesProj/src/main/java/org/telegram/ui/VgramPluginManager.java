@@ -25,6 +25,10 @@ public final class VgramPluginManager {
                 "Управляет эффектом Liquid Glass в поддерживаемых элементах.", true));
         plugins.add(new BasicPlugin("profile_badges", "Бейджи профиля",
                 "Показывает бейджи VGRAM рядом с именем в профиле.", true));
+        plugins.add(new BasicPlugin("animations", "Анимации интерфейса",
+                "Управляет анимациями стикеров, эмодзи, звонков и частицами.", true));
+        plugins.add(new BasicPlugin("autoplay_media", "Автовоспроизведение медиа",
+                "Управляет автоматическим воспроизведением GIF и видео.", true));
         PLUGINS = Collections.unmodifiableList(plugins);
     }
 
@@ -39,8 +43,16 @@ public final class VgramPluginManager {
         for (VgramPlugin plugin : PLUGINS) {
             if (plugin.getId().equals(pluginId)) {
                 SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-                if ("liquid_glass".equals(pluginId) && !prefs.contains(pluginId)) {
-                    return LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS);
+                if (!prefs.contains(pluginId)) {
+                    if ("liquid_glass".equals(pluginId)) {
+                        return LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS);
+                    }
+                    if ("animations".equals(pluginId)) {
+                        return LiteMode.isEnabled(LiteMode.FLAGS_ANIMATED_STICKERS | LiteMode.FLAGS_ANIMATED_EMOJI | LiteMode.FLAG_CALLS_ANIMATIONS | LiteMode.FLAG_PARTICLES);
+                    }
+                    if ("autoplay_media".equals(pluginId)) {
+                        return LiteMode.isEnabled(LiteMode.FLAG_AUTOPLAY_VIDEOS | LiteMode.FLAG_AUTOPLAY_GIFS);
+                    }
                 }
                 return prefs.getBoolean(pluginId, plugin.isEnabledByDefault());
             }
@@ -59,6 +71,10 @@ public final class VgramPluginManager {
             LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, enabled);
             context.getSharedPreferences("vgram_appearance", Context.MODE_PRIVATE)
                     .edit().putBoolean("liquid_glass", enabled).apply();
+        } else if ("animations".equals(pluginId)) {
+            LiteMode.toggleFlag(LiteMode.FLAGS_ANIMATED_STICKERS | LiteMode.FLAGS_ANIMATED_EMOJI | LiteMode.FLAG_CALLS_ANIMATIONS | LiteMode.FLAG_PARTICLES, enabled);
+        } else if ("autoplay_media".equals(pluginId)) {
+            LiteMode.toggleFlag(LiteMode.FLAG_AUTOPLAY_VIDEOS | LiteMode.FLAG_AUTOPLAY_GIFS, enabled);
         }
     }
 
