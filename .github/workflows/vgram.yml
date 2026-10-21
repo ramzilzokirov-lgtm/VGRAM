@@ -1,7 +1,14 @@
 name: VGRAM Build
 on:
-  # Run Android builds manually only, after the app changes are ready.
+  # Manual runs are supported; app/workflow changes also trigger one build.
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/vgram.yml'
+      - 'TMessagesProj/**'
+      - 'gradle.properties'
+      - 'vgram-icon.png'
 permissions:
   contents: write
 jobs:
@@ -456,13 +463,25 @@ jobs:
       - run: chmod +x gradlew
       - name: Fix VGRAM appearance screen LayoutHelper call
         run: |
-          FILE=TMessagesProj/src/main/java/org/telegram/ui/VgramAppearanceActivity.java
-          if [ -f "$FILE" ]; then
-            sed -i 's/LayoutHelper\.createScroll(LayoutHelper\.MATCH_PARENT, LayoutHelper\.WRAP_CONTENT)/LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, android.view.Gravity.TOP)/g' "$FILE"
-            echo "Patched createScroll call in VgramAppearanceActivity.java"
-          else
-            echo "VgramAppearanceActivity.java is not present in this source revision; nothing to patch."
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path("TMessagesProj/src/main/java/org/telegram/ui")
+          changed = []
+          if root.exists():
+              for p in root.rglob("*.java"):
+                  s = p.read_text(encoding="utf-8")
+                  # LayoutHelper.createScroll requires at least three arguments in this source tree.
+                  new = re.sub(
+                      r'LayoutHelper\\.createScroll\\(LayoutHelper\\.MATCH_PARENT,\\s*LayoutHelper\\.WRAP_CONTENT\\)',
+                      'LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, android.view.Gravity.TOP)',
+                      s
+                  )
+                  if new != s:
+                      p.write_text(new, encoding="utf-8")
+                      changed.append(str(p))
+          print("Patched createScroll call in:", changed if changed else "no matching two-argument calls")
+          PY
       - name: Build APK
         run: |
           set -euo pipefail
