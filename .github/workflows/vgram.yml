@@ -341,6 +341,10 @@ jobs:
                   });
                   list.addView(downloadButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 10, 0, 0));
 
+                  TextView docsButton = createButton(context, "Документация VGRAM");
+                  docsButton.setOnClickListener(v -> Browser.openUrl(getParentActivity(), "https://github.com/ramzilzokirov-lgtm/VGRAM/blob/master/docs/PLUGINS.md"));
+                  list.addView(docsButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 0, 10, 0, 0));
+
                   notesView = new TextView(context);
                   notesView.setTextSize(14);
                   notesView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
