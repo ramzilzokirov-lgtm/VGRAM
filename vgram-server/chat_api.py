@@ -49,6 +49,28 @@ def ensure_schema():
             recipient_id TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
         )""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_vgram_messages_recipient ON messages(recipient_id,id)")
+        c.execute("""CREATE TABLE IF NOT EXISTS star_wallets (
+            vgram_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0 CHECK(balance >= 0),
+            updated_at TEXT NOT NULL
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS star_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, vgram_id TEXT NOT NULL,
+            amount INTEGER NOT NULL, reason TEXT NOT NULL, event_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        )""")
+
+
+def award_signup_stars(c, vgram_id: str):
+    event_key = f"signup:{vgram_id}"
+    cur = c.execute(
+        "INSERT OR IGNORE INTO star_ledger(vgram_id,amount,reason,event_key,created_at) VALUES(?,?,?,?,?)",
+        (vgram_id, 1000, "registration_bonus", event_key, now()),
+    )
+    c.execute("INSERT OR IGNORE INTO star_wallets(vgram_id,balance,updated_at) VALUES(?,0,?)",
+              (vgram_id, 0, now()))
+    if cur.rowcount:
+        c.execute("UPDATE star_wallets SET balance=balance+1000,updated_at=? WHERE vgram_id=?",
+                  (now(), vgram_id))
 
 
 def make_id(c):
@@ -131,7 +153,8 @@ def register(data: RegisterIn):
         except sqlite3.IntegrityError:
             raise HTTPException(409, "Username already taken")
         token, expires = new_session(c, vid)
-        return {"username": username, "vgram_id": vid, "access_token": token,
+        award_signup_stars(c, vid)
+        return {"username": username, "vgram_id": vid, "bonus_stars": 1000, "access_token": token,
                 "token_type": "Bearer", "expires_at": expires}
 
 
@@ -148,6 +171,19 @@ def login(data: LoginIn):
         token, expires = new_session(c, row["vgram_id"])
         return {"username": row["username"], "vgram_id": row["vgram_id"],
                 "access_token": token, "token_type": "Bearer", "expires_at": expires}
+
+
+
+@router.get("/account/wallet")
+def wallet(authorization: str | None = Header(default=None)):
+    ensure_schema()
+    user = require_user(authorization)
+    with db() as c:
+        row = c.execute("SELECT balance FROM star_wallets WHERE vgram_id=?", (user["vgram_id"],)).fetchone()
+        tx = c.execute("SELECT amount,reason,created_at FROM star_ledger WHERE vgram_id=? ORDER BY id DESC LIMIT 50",
+                       (user["vgram_id"],)).fetchall()
+    return {"vgram_id": user["vgram_id"], "balance": row["balance"] if row else 0,
+            "currency": "VGRAM_STARS", "transactions": [dict(x) for x in tx]}
 
 
 @router.get("/account/me")
