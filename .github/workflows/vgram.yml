@@ -473,7 +473,7 @@ jobs:
                   s = p.read_text(encoding="utf-8")
                   # LayoutHelper.createScroll requires at least three arguments in this source tree.
                   new = re.sub(
-                      r'LayoutHelper\\.createScroll\\(LayoutHelper\\.MATCH_PARENT,\\s*LayoutHelper\\.WRAP_CONTENT\\)',
+                      r'LayoutHelper\.createScroll\(LayoutHelper\.MATCH_PARENT,\s*LayoutHelper\.WRAP_CONTENT\)',
                       'LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, android.view.Gravity.TOP)',
                       s
                   )
