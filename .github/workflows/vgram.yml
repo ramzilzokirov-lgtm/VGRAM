@@ -458,7 +458,7 @@ jobs:
         run: |
           FILE=TMessagesProj/src/main/java/org/telegram/ui/VgramAppearanceActivity.java
           if [ -f "$FILE" ]; then
-            sed -i 's/LayoutHelper\.createScroll(LayoutHelper\.MATCH_PARENT, LayoutHelper\.WRAP_CONTENT)/LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP)/g' "$FILE"
+            sed -i 's/LayoutHelper\.createScroll(LayoutHelper\.MATCH_PARENT, LayoutHelper\.WRAP_CONTENT)/LayoutHelper.createScroll(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, android.view.Gravity.TOP)/g' "$FILE"
             echo "Patched createScroll call in VgramAppearanceActivity.java"
           else
             echo "VgramAppearanceActivity.java is not present in this source revision; nothing to patch."
