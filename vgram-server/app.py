@@ -64,6 +64,10 @@ def init_db():
             event_key TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL
         )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS maintenance_flags (
+            flag TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )""")
         c.execute(
             """CREATE TABLE IF NOT EXISTS user_badges (
                 vgram_id TEXT NOT NULL,
@@ -96,6 +100,23 @@ def startup():
     # The Telegram bot runs only in the dedicated vgram-shop-bot worker.
     # Do not start a second getUpdates poller from the HTTP API service.
     init_db()
+    # Explicit one-shot maintenance switch. The marker prevents repeating a destructive reset
+    # on later restarts even if the environment variable is left configured accidentally.
+    if os.getenv("VGRAM_RESET_USER_DATA_ONCE", "").strip().lower() == "yes":
+        with db() as c:
+            already_done = c.execute(
+                "SELECT 1 FROM maintenance_flags WHERE flag='reset_user_data_2026_10'"
+            ).fetchone()
+            if not already_done:
+                for table in (
+                    "messages", "sessions", "auth_credentials", "user_badges",
+                    "star_ledger", "star_wallets", "users",
+                ):
+                    c.execute(f"DELETE FROM {table}")
+                c.execute(
+                    "INSERT INTO maintenance_flags(flag,applied_at) VALUES(?,?)",
+                    ("reset_user_data_2026_10", now_iso()),
+                )
 
 
 def auth(key):
