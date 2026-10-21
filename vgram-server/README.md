@@ -33,3 +33,11 @@ Products and prices are manually entered by the admin. A customer order creates 
 - `/broadcast message` — prepare a broadcast and confirm it in Telegram
 
 Use prices as readable text, e.g. `5 EUR` or `250 UAH`. Verify that you are allowed to sell any digital goods and that each listing is genuine before adding it.
+
+
+## VGRAM Stars wallet
+- Each newly registered VGRAM account receives **1,000 internal VGRAM Stars** exactly once.
+- These are project-internal credits, not Telegram Stars and not credits issued by Google Play.
+- The server records the registration bonus in `star_ledger` with a unique event key and exposes the balance through `GET /account/wallet`.
+- Login does not award additional Stars.
+- NFT prices are not hardcoded as universal values: official Telegram gift prices and collectible resale prices vary by gift/market listing. To mirror them accurately, the catalogue must be populated from current official Telegram gift data / marketplace listings rather than guessed fixed prices.
