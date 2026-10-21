@@ -255,6 +255,61 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("Отмена", callback_data="adm:broadcastcancel")]]))
 
 
+async def syncnfts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update):
+        await update.message.reply_text("⛔ Нет доступа.")
+        return
+    api = os.getenv("VGRAM_API_URL", "https://vgram-31xt.onrender.com").rstrip("/")
+    key = os.getenv("VGRAM_ADMIN_KEY", "")
+    if not key:
+        await update.message.reply_text("На Render не задан VGRAM_ADMIN_KEY; каталог не обновлён.")
+        return
+    try:
+        async with httpx.AsyncClient(timeout=25) as client:
+            response = await client.get(f"https://api.telegram.org/bot{TOKEN}/getAvailableGifts")
+            response.raise_for_status()
+            payload = response.json()
+            gifts = payload.get("result", {}).get("gifts", []) if payload.get("ok") else []
+            if not isinstance(gifts, list) or not gifts:
+                await update.message.reply_text("Telegram не вернул каталог подарков; цены не менялись.")
+                return
+            synced, failed = 0, 0
+            for gift in gifts:
+                gift_id = str(gift.get("id", "")).strip()
+                price = gift.get("star_count")
+                if not gift_id or not isinstance(price, int) or price < 0:
+                    continue
+                total = gift.get("total_count")
+                remaining = gift.get("remaining_count")
+                if not isinstance(total, int) or total < 0:
+                    total, remaining = 1, 1
+                elif not isinstance(remaining, int) or remaining < 0:
+                    remaining = total
+                remaining = min(remaining, total)
+                body = {
+                    "title": str(gift.get("name") or gift_id)[:200],
+                    "source": "Telegram official gift catalogue",
+                    "price_minor": price, "currency": "XTR",
+                    "max_quantity": total, "available_quantity": remaining,
+                    "active": True,
+                }
+                result = await client.put(
+                    f"{api}/admin/nfts/{quote(gift_id, safe='')}",
+                    headers={"X-VGRAM-Admin-Key": key}, json=body,
+                )
+                if result.is_success:
+                    synced += 1
+                else:
+                    failed += 1
+        await update.message.reply_text(
+            f"🖼 Каталог Telegram обновлён. Обновлено: {synced}; ошибок: {failed}. "
+            "Цены — официальная начальная стоимость подарков в Telegram Stars (XTR), не цены перепродажи NFT."
+        )
+    except Exception as exc:
+        log.exception("Telegram gift catalogue sync failed")
+        await update.message.reply_text(f"Не удалось обновить каталог: {type(exc).__name__}")
+
+
 async def badge_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
         await update.message.reply_text("⛔ Нет доступа.")
@@ -663,7 +718,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "adm:badgeshelp":
         await q.edit_message_text("🏷 Управление бейджами VGRAM\n/badge VGRAM_ID CODE | подпись\n/unbadge VGRAM_ID CODE\n/tgbadge TELEGRAM_ID CODE | подпись\n/untgbadge TELEGRAM_ID CODE\nКоды: TESTER, OG, FRIENDS, TEAM, DEVELOPER, FOUNDER", reply_markup=admin_menu())
     elif data == "adm:nftstockhelp":
-        await q.edit_message_text("🖼 Восстановить доступное количество NFT до сохранённого max_quantity. Это не создаёт выдуманные позиции. Команда: /restocknfts", reply_markup=admin_menu())
+        await q.edit_message_text("🖼 NFT: /syncnfts — обновить каталог по официальным ценам Telegram Stars; /restocknfts — восстановить сохранённые остатки.", reply_markup=admin_menu())
     elif data == "adm:menu":
         await q.edit_message_text("⚙️ Панель администратора", reply_markup=admin_menu())
 
@@ -691,6 +746,7 @@ def main():
     app.add_handler(CommandHandler("tgbadge", tgbadge_cmd))
     app.add_handler(CommandHandler("untgbadge", untgbadge_cmd))
     app.add_handler(CommandHandler("restocknfts", restock_nfts))
+    app.add_handler(CommandHandler("syncnfts", syncnfts))
     app.add_handler(CallbackQueryHandler(button))
     log.info("VGRAM shop bot starting")
     app.run_polling(drop_pending_updates=False)
