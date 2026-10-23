@@ -613,7 +613,13 @@ def issue_telegram_user_badge(
             "SELECT vgram_id FROM users WHERE account_id=?", (account_id,)
         ).fetchone()
         if not user:
-            raise HTTPException(404, "Telegram account is not linked to a VGRAM account")
+            linked_id = new_id(c)
+            created = now_iso()
+            c.execute(
+                "INSERT INTO users(account_id,vgram_id,created_at,active) VALUES(?,?,?,1)",
+                (account_id, linked_id, created),
+            )
+            user = {"vgram_id": linked_id}
         c.execute(
             """INSERT INTO user_badges(vgram_id,badge_code,label,issued_by,issued_at)
                VALUES(?,?,?,?,?)
