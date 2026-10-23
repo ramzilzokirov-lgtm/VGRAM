@@ -592,6 +592,66 @@ def revoke_user_badge(
         return {"ok": True, "vgram_id": vgram_id, "badge_code": badge_code.strip().upper()}
 
 
+@app.put("/admin/telegram/{telegram_id}/badges/{badge_code}")
+def issue_telegram_user_badge(
+    telegram_id: str,
+    badge_code: str,
+    data: BadgeIn,
+    x_vgram_admin_key: str | None = Header(default=None),
+):
+    """Issue a server-synced badge to a Telegram account linked to a VGRAM account."""
+    auth(x_vgram_admin_key)
+    if not telegram_id.isdigit() or len(telegram_id) > 20:
+        raise HTTPException(400, "Invalid Telegram user ID")
+    code = badge_code.strip().upper()
+    allowed = {"TESTER", "OG", "FRIENDS", "TEAM", "DEVELOPER", "FOUNDER"}
+    if code not in allowed:
+        raise HTTPException(400, "Unsupported badge code")
+    account_id = f"telegram:{telegram_id}"
+    with db() as c:
+        user = c.execute(
+            "SELECT vgram_id FROM users WHERE account_id=?", (account_id,)
+        ).fetchone()
+        if not user:
+            raise HTTPException(404, "Telegram account is not linked to a VGRAM account")
+        c.execute(
+            """INSERT INTO user_badges(vgram_id,badge_code,label,issued_by,issued_at)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(vgram_id,badge_code) DO UPDATE SET
+                 label=excluded.label, issued_by=excluded.issued_by, issued_at=excluded.issued_at""",
+            (user["vgram_id"], code, data.label.strip(), "project-owner", now_iso()),
+        )
+        return {"ok": True, "telegram_id": telegram_id, "vgram_id": user["vgram_id"],
+                "badge_code": code, "label": data.label.strip()}
+
+
+@app.delete("/admin/telegram/{telegram_id}/badges/{badge_code}")
+def revoke_telegram_user_badge(
+    telegram_id: str,
+    badge_code: str,
+    x_vgram_admin_key: str | None = Header(default=None),
+):
+    """Revoke a server-synced badge from a linked Telegram account."""
+    auth(x_vgram_admin_key)
+    if not telegram_id.isdigit() or len(telegram_id) > 20:
+        raise HTTPException(400, "Invalid Telegram user ID")
+    code = badge_code.strip().upper()
+    account_id = f"telegram:{telegram_id}"
+    with db() as c:
+        user = c.execute(
+            "SELECT vgram_id FROM users WHERE account_id=?", (account_id,)
+        ).fetchone()
+        if not user:
+            raise HTTPException(404, "Telegram account is not linked to a VGRAM account")
+        cur = c.execute(
+            "DELETE FROM user_badges WHERE vgram_id=? AND badge_code=?",
+            (user["vgram_id"], code),
+        )
+        if not cur.rowcount:
+            raise HTTPException(404, "Badge not found")
+        return {"ok": True, "telegram_id": telegram_id, "badge_code": code}
+
+
 @app.post("/admin/nfts/restore-stock")
 def restore_nft_stock(x_vgram_admin_key: str | None = Header(default=None)):
     """Restore active listings to their configured max_quantity; never invent supply."""
